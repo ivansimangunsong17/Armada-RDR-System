@@ -124,63 +124,78 @@ export async function getAssignedVesselsForChecker(checkerId) {
   }
 }
 
-export async function getDischargeEntriesForChecker(checkerId) {
+const dischargeEntrySelect = `
+  id,
+  vessel_id,
+  hatch_cargo_id,
+  checker_id,
+  plate_number,
+  tonnage,
+  delivery_order_number,
+  scale_ticket_number,
+  gate_in_at,
+  gate_in_date,
+  gate_in_time,
+  gate_out_at,
+  gate_out_date,
+  gate_out_time,
+  barcode_photo_url,
+  notes,
+  created_at,
+  updated_at,
+  hatch_cargo (
+    id,
+    hatch_no,
+    hatch_label
+  ),
+  vessels (
+    id,
+    vessel_name,
+    cargo_owner,
+    cargo_type,
+    destination_id,
+    destinations (
+      id,
+      name
+    )
+  ),
+  profiles (
+    id,
+    full_name
+  )
+`
+
+export async function getDischargeEntriesForChecker(checkerId, options = {}) {
   if (!supabase) {
     return {
       data: [],
+      count: 0,
       error: getSupabaseRequiredError(),
     }
   }
 
-  const { data, error } = await supabase
+  const { page, pageSize, vesselId } = options
+  let query = supabase
     .from('discharge_entries')
-    .select(
-      `
-        id,
-        vessel_id,
-        hatch_cargo_id,
-        checker_id,
-        plate_number,
-        tonnage,
-        delivery_order_number,
-        scale_ticket_number,
-        gate_in_at,
-        gate_in_date,
-        gate_in_time,
-        gate_out_at,
-        gate_out_date,
-        gate_out_time,
-        barcode_photo_url,
-        notes,
-        created_at,
-        updated_at,
-        hatch_cargo (
-          id,
-          hatch_no,
-          hatch_label
-        ),
-        vessels (
-          id,
-          vessel_name,
-          cargo_owner,
-          cargo_type,
-          destination_id,
-          destinations (
-            id,
-            name
-          )
-        ),
-        profiles (
-          id,
-          full_name
-        )
-      `,
-    )
+    .select(dischargeEntrySelect, { count: page && pageSize ? 'exact' : undefined })
     .eq('checker_id', checkerId)
     .order('gate_out_at', { ascending: false })
 
+  if (vesselId) {
+    query = query.eq('vessel_id', vesselId)
+  }
+
+  if (page && pageSize) {
+    const from = (page - 1) * pageSize
+    const to = from + pageSize - 1
+    query = query.range(from, to)
+  }
+
+  const { data, error, count } = await query
+
   return {
     data: (data || []).map(mapDischargeEntry),
+    count: count ?? (data || []).length,
     error,
   }
 }
@@ -308,10 +323,11 @@ export async function updateDischargeEntry(entryId, payload) {
   }
 }
 
-export async function getDischargeEntriesForVessel(vesselId) {
+export async function getDischargeEntriesForVessel(vesselId, options = {}) {
   if (!supabase) {
     return {
       data: [],
+      count: 0,
       error: getSupabaseRequiredError(),
     }
   }
@@ -319,59 +335,29 @@ export async function getDischargeEntriesForVessel(vesselId) {
   if (!vesselId) {
     return {
       data: [],
+      count: 0,
       error: null,
     }
   }
 
-  const { data, error } = await supabase
+  const { page, pageSize } = options
+  let query = supabase
     .from('discharge_entries')
-    .select(
-      `
-        id,
-        vessel_id,
-        hatch_cargo_id,
-        checker_id,
-        plate_number,
-        tonnage,
-        delivery_order_number,
-        scale_ticket_number,
-        gate_in_at,
-        gate_in_date,
-        gate_in_time,
-        gate_out_at,
-        gate_out_date,
-        gate_out_time,
-        barcode_photo_url,
-        notes,
-        created_at,
-        updated_at,
-        hatch_cargo (
-          id,
-          hatch_no,
-          hatch_label
-        ),
-        vessels (
-          id,
-          vessel_name,
-          cargo_owner,
-          cargo_type,
-          destination_id,
-          destinations (
-            id,
-            name
-          )
-        ),
-        profiles (
-          id,
-          full_name
-        )
-      `,
-    )
+    .select(dischargeEntrySelect, { count: page && pageSize ? 'exact' : undefined })
     .eq('vessel_id', vesselId)
     .order('gate_out_at', { ascending: false })
 
+  if (page && pageSize) {
+    const from = (page - 1) * pageSize
+    const to = from + pageSize - 1
+    query = query.range(from, to)
+  }
+
+  const { data, error, count } = await query
+
   return {
     data: (data || []).map(mapDischargeEntry),
+    count: count ?? (data || []).length,
     error,
   }
 }

@@ -20,6 +20,7 @@ import PeriodReportPage from '../pages/PeriodReportPage.jsx'
 import RunningReportPage from '../pages/RunningReportPage.jsx'
 import ShiftReportPage from '../pages/ShiftReportPage.jsx'
 import StowagePlanPage from '../pages/StowagePlanPage.jsx'
+import UserManagementPage from '../pages/UserManagementPage.jsx'
 import VesselDataPage from '../pages/VesselDataPage.jsx'
 import PlaceholderPage from '../pages/PlaceholderPage.jsx'
 
@@ -79,12 +80,7 @@ export const roleRoutes = {
       path: '/admin/user-management',
       label: 'User Management',
       icon: FaUsersCog,
-      element: () => (
-        <PlaceholderPage
-          title="User Management"
-          description="Admin nantinya membuat akun checker, supervisor, dan mengatur permission user."
-        />
-      ),
+      element: (appState) => <UserManagementPage appState={appState} />,
     },
     {
       path: '/admin/period-report',

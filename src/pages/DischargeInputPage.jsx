@@ -17,6 +17,7 @@ import {
   createDischargeEntry,
   getAssignedVesselsForChecker,
   getDischargeEntriesForChecker,
+  getDischargeEntriesForVessel,
   getDischargeMutationError,
   updateDischargeEntry,
 } from '../services/dischargeService.js'
@@ -27,6 +28,13 @@ import {
   getGateTimePayload,
   validateGateTimes,
 } from '../utils/gateTimes.js'
+import {
+  buildDeliveryOrderNumber,
+  getNextDeliveryOrderDigits,
+  getNextScaleTicketNumber,
+  normalizeDocumentDigits,
+  parseDeliveryOrderDigits,
+} from '../utils/documentNumbers.js'
 
 const emptyForm = {
   vesselId: '',
@@ -51,10 +59,37 @@ function getCheckerId(currentUser) {
   return currentUser?.authUserId || currentUser?.id
 }
 
+function getOverDischargeWarning({ entries, excludeEntryId, hatchCargoId, initialCargo, tonnage }) {
+  const numericInitialCargo = Number(initialCargo) || 0
+  const numericTonnage = Number(tonnage) || 0
+
+  if (!hatchCargoId || numericInitialCargo <= 0 || numericTonnage <= 0) {
+    return null
+  }
+
+  const currentDischarge = (entries || []).reduce((total, entry) => {
+    if (entry.id === excludeEntryId || entry.hatchCargoId !== hatchCargoId) return total
+    return total + (Number(entry.tonnage) || 0)
+  }, 0)
+  const projectedDischarge = currentDischarge + numericTonnage
+
+  if (projectedDischarge <= numericInitialCargo) {
+    return null
+  }
+
+  return {
+    currentDischarge,
+    projectedDischarge,
+    initialCargo: numericInitialCargo,
+    excess: projectedDischarge - numericInitialCargo,
+  }
+}
+
 function DischargeInputPage({ appState }) {
   const { setDischargeEntries, currentUser } = appState
   const [assignedVessels, setAssignedVessels] = useState([])
   const [entries, setEntries] = useState([])
+  const [vesselNumberingEntries, setVesselNumberingEntries] = useState([])
   const [form, setForm] = useState(() => getEmptyForm())
   const [errors, setErrors] = useState({})
   const [message, setMessage] = useState('')
@@ -86,10 +121,29 @@ function DischargeInputPage({ appState }) {
   const editVessel =
     assignedVessels.find((vessel) => vessel.id === editForm.vesselId) || selectedVessel
   const editHatches = editVessel?.hatchCargoRows || []
+  const selectedHatch = hatches.find((hatch) => hatch.id === form.hatchCargoId)
+  const selectedEditHatch = editHatches.find((hatch) => hatch.id === editForm.hatchCargoId)
+  const overDischargeWarning = getOverDischargeWarning({
+    entries: vesselNumberingEntries,
+    hatchCargoId: form.hatchCargoId,
+    initialCargo: selectedHatch?.initialCargo,
+    tonnage: parseTonnageInputToNumber(form.tonnage),
+  })
+  const editOverDischargeWarning = getOverDischargeWarning({
+    entries: vesselNumberingEntries,
+    excludeEntryId: editingEntry?.id,
+    hatchCargoId: editForm.hatchCargoId,
+    initialCargo: selectedEditHatch?.initialCargo,
+    tonnage: parseTonnageInputToNumber(editForm.tonnage),
+  })
 
   useEffect(() => {
     loadData()
   }, [checkerId])
+
+  useEffect(() => {
+    loadVesselNumberingEntries()
+  }, [selectedVessel?.id])
 
   async function loadData() {
     if (!checkerId) {
@@ -126,6 +180,31 @@ function DischargeInputPage({ appState }) {
     setIsLoading(false)
   }
 
+  async function loadVesselNumberingEntries() {
+    if (!selectedVessel?.id) {
+      setVesselNumberingEntries([])
+      return
+    }
+
+    const result = await getDischargeEntriesForVessel(selectedVessel.id)
+
+    if (result.error) {
+      setLoadError((current) => `${current} Gagal memuat nomor dokumen terakhir.`.trim())
+      return
+    }
+
+    setVesselNumberingEntries(result.data)
+    setForm((current) => {
+      if (current.vesselId !== selectedVessel.id) return current
+
+      return {
+        ...current,
+        deliveryOrderNumber: getNextDeliveryOrderDigits(result.data, selectedVessel.id),
+        scaleTicketNumber: getNextScaleTicketNumber(result.data, selectedVessel.id),
+      }
+    })
+  }
+
   function updateForm(field, value) {
     setForm((current) => {
       if (field === 'vesselId') {
@@ -133,6 +212,22 @@ function DischargeInputPage({ appState }) {
           ...current,
           vesselId: value,
           hatchCargoId: '',
+          deliveryOrderNumber: '',
+          scaleTicketNumber: '',
+        }
+      }
+
+      if (field === 'plateNumber') {
+        return {
+          ...current,
+          plateNumber: value.toUpperCase(),
+        }
+      }
+
+      if (field === 'deliveryOrderNumber' || field === 'scaleTicketNumber') {
+        return {
+          ...current,
+          [field]: normalizeDocumentDigits(value),
         }
       }
 
@@ -144,6 +239,22 @@ function DischargeInputPage({ appState }) {
   }
 
   function updateEditForm(field, value) {
+    if (field === 'plateNumber') {
+      setEditForm((current) => ({
+        ...current,
+        plateNumber: value.toUpperCase(),
+      }))
+      return
+    }
+
+    if (field === 'deliveryOrderNumber' || field === 'scaleTicketNumber') {
+      setEditForm((current) => ({
+        ...current,
+        [field]: normalizeDocumentDigits(value),
+      }))
+      return
+    }
+
     setEditForm((current) => ({
       ...current,
       [field]: field === 'tonnage' ? formatTonnageInput(value) : value,
@@ -226,9 +337,13 @@ function DischargeInputPage({ appState }) {
     else if (tonnage <= 0) nextErrors.tonnage = 'Tonnage wajib lebih dari 0.'
     if (!form.deliveryOrderNumber.trim()) {
       nextErrors.deliveryOrderNumber = 'No Surat Jalan wajib diisi.'
+    } else if (!/^\d+$/.test(form.deliveryOrderNumber)) {
+      nextErrors.deliveryOrderNumber = 'No Surat Jalan hanya boleh angka.'
     }
     if (!form.scaleTicketNumber.trim()) {
       nextErrors.scaleTicketNumber = 'No SJ Timbangan wajib diisi.'
+    } else if (!/^\d+$/.test(form.scaleTicketNumber)) {
+      nextErrors.scaleTicketNumber = 'No SJ Timbangan hanya boleh angka.'
     }
     Object.assign(nextErrors, validateGateTimes(form))
 
@@ -246,9 +361,13 @@ function DischargeInputPage({ appState }) {
     else if (tonnage <= 0) nextErrors.tonnage = 'Tonnage wajib lebih dari 0.'
     if (!editForm.deliveryOrderNumber.trim()) {
       nextErrors.deliveryOrderNumber = 'No Surat Jalan wajib diisi.'
+    } else if (!/^\d+$/.test(editForm.deliveryOrderNumber)) {
+      nextErrors.deliveryOrderNumber = 'No Surat Jalan hanya boleh angka.'
     }
     if (!editForm.scaleTicketNumber.trim()) {
       nextErrors.scaleTicketNumber = 'No SJ Timbangan wajib diisi.'
+    } else if (!/^\d+$/.test(editForm.scaleTicketNumber)) {
+      nextErrors.scaleTicketNumber = 'No SJ Timbangan hanya boleh angka.'
     }
     Object.assign(nextErrors, validateGateTimes(editForm))
 
@@ -270,7 +389,7 @@ function DischargeInputPage({ appState }) {
     if (barcodePhotoFile) {
       const uploadResult = await uploadBarcodeReceiptPhoto({
         checkerId,
-        deliveryOrderNumber: form.deliveryOrderNumber.trim(),
+        deliveryOrderNumber: buildDeliveryOrderNumber(form.deliveryOrderNumber),
         file: barcodePhotoFile,
         vesselId: form.vesselId,
       })
@@ -290,7 +409,7 @@ function DischargeInputPage({ appState }) {
       checker_id: checkerId,
       plate_number: form.plateNumber.trim().toUpperCase(),
       tonnage: parseTonnageInputToNumber(form.tonnage),
-      delivery_order_number: form.deliveryOrderNumber.trim(),
+      delivery_order_number: buildDeliveryOrderNumber(form.deliveryOrderNumber),
       scale_ticket_number: form.scaleTicketNumber.trim(),
       ...getGateTimePayload(form),
       notes: form.notes.trim() || null,
@@ -309,10 +428,14 @@ function DischargeInputPage({ appState }) {
       return
     }
 
+    const nextVesselNumberingEntries = [result.data, ...vesselNumberingEntries]
     setEntries((current) => [result.data, ...current])
+    setVesselNumberingEntries(nextVesselNumberingEntries)
     setDischargeEntries((current) => [result.data, ...current])
     setForm(getEmptyForm({
       vesselId: form.vesselId,
+      deliveryOrderNumber: getNextDeliveryOrderDigits(nextVesselNumberingEntries, form.vesselId),
+      scaleTicketNumber: getNextScaleTicketNumber(nextVesselNumberingEntries, form.vesselId),
     }))
     setErrors({})
     resetBarcodePhotoInput()
@@ -327,8 +450,8 @@ function DischargeInputPage({ appState }) {
       hatchCargoId: entry.hatchCargoId,
       plateNumber: entry.plateNumber,
       tonnage: formatTonnageInputFromNumber(entry.tonnage),
-      deliveryOrderNumber: entry.deliveryOrderNumber,
-      scaleTicketNumber: entry.scaleTicketNumber,
+      deliveryOrderNumber: parseDeliveryOrderDigits(entry.deliveryOrderNumber),
+      scaleTicketNumber: normalizeDocumentDigits(entry.scaleTicketNumber),
       ...getGateTimeFieldsFromEntry(entry),
       notes: entry.notes || '',
     })
@@ -361,7 +484,7 @@ function DischargeInputPage({ appState }) {
     if (editBarcodePhotoFile) {
       const uploadResult = await uploadBarcodeReceiptPhoto({
         checkerId,
-        deliveryOrderNumber: editForm.deliveryOrderNumber.trim(),
+        deliveryOrderNumber: buildDeliveryOrderNumber(editForm.deliveryOrderNumber),
         file: editBarcodePhotoFile,
         vesselId: editForm.vesselId,
       })
@@ -381,7 +504,7 @@ function DischargeInputPage({ appState }) {
       checker_id: checkerId,
       plate_number: editForm.plateNumber.trim().toUpperCase(),
       tonnage: parseTonnageInputToNumber(editForm.tonnage),
-      delivery_order_number: editForm.deliveryOrderNumber.trim(),
+      delivery_order_number: buildDeliveryOrderNumber(editForm.deliveryOrderNumber),
       scale_ticket_number: editForm.scaleTicketNumber.trim(),
       ...getGateTimePayload(editForm),
       notes: editForm.notes.trim() || null,
@@ -404,6 +527,9 @@ function DischargeInputPage({ appState }) {
     }
 
     setEntries((current) =>
+      current.map((entry) => (entry.id === editingEntry.id ? result.data : entry)),
+    )
+    setVesselNumberingEntries((current) =>
       current.map((entry) => (entry.id === editingEntry.id ? result.data : entry)),
     )
     setDischargeEntries((current) =>
@@ -558,15 +684,41 @@ function DischargeInputPage({ appState }) {
                 {errors.tonnage && (
                   <p className="mt-1 text-sm font-semibold text-red-600">{errors.tonnage}</p>
                 )}
+                {overDischargeWarning && (
+                  <div className="mt-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-xs font-semibold text-amber-800">
+                    Perhatian: proyeksi discharge hatch ini menjadi{' '}
+                    {formatMT(overDischargeWarning.projectedDischarge)}, melebihi initial cargo{' '}
+                    {formatMT(overDischargeWarning.initialCargo)}. Data tetap bisa disimpan karena
+                    selisih lapangan mungkin terjadi.
+                  </div>
+                )}
               </div>
 
               <div>
-                <Input
-                  label="No Surat Jalan"
-                  value={form.deliveryOrderNumber}
-                  onChange={(event) => updateForm('deliveryOrderNumber', event.target.value)}
-                  disabled={assignedVessels.length === 0}
-                />
+                <label className="block">
+                  <span className="mb-1.5 block text-sm font-bold text-slate-700">
+                    No Surat Jalan
+                  </span>
+                  <div className="flex min-h-10 overflow-hidden rounded-md border border-slate-300 bg-white shadow-sm focus-within:border-red-700 focus-within:ring-4 focus-within:ring-red-100">
+                    <span className="inline-flex items-center border-r border-slate-300 bg-slate-100 px-3 text-sm font-extrabold text-slate-700">
+                      DT
+                    </span>
+                    <input
+                      className="min-h-10 w-full bg-white px-3 py-2 text-sm text-slate-900 outline-none placeholder:text-slate-400"
+                      disabled={assignedVessels.length === 0}
+                      inputMode="numeric"
+                      onBlur={() =>
+                        updateForm(
+                          'deliveryOrderNumber',
+                          parseDeliveryOrderDigits(form.deliveryOrderNumber),
+                        )
+                      }
+                      onChange={(event) => updateForm('deliveryOrderNumber', event.target.value)}
+                      placeholder="0001"
+                      value={form.deliveryOrderNumber}
+                    />
+                  </div>
+                </label>
                 {errors.deliveryOrderNumber && (
                   <p className="mt-1 text-sm font-semibold text-red-600">
                     {errors.deliveryOrderNumber}
@@ -804,14 +956,40 @@ function DischargeInputPage({ appState }) {
                       {editErrors.tonnage}
                     </p>
                   )}
+                  {editOverDischargeWarning && (
+                    <div className="mt-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-xs font-semibold text-amber-800">
+                      Perhatian: proyeksi discharge hatch ini menjadi{' '}
+                      {formatMT(editOverDischargeWarning.projectedDischarge)}, melebihi initial
+                      cargo {formatMT(editOverDischargeWarning.initialCargo)}. Data tetap bisa
+                      disimpan karena selisih lapangan mungkin terjadi.
+                    </div>
+                  )}
                 </div>
 
                 <div>
-                  <Input
-                    label="No Surat Jalan"
-                    value={editForm.deliveryOrderNumber}
-                    onChange={(event) => updateEditForm('deliveryOrderNumber', event.target.value)}
-                  />
+                  <label className="block">
+                    <span className="mb-1.5 block text-sm font-bold text-slate-700">
+                      No Surat Jalan
+                    </span>
+                    <div className="flex min-h-10 overflow-hidden rounded-md border border-slate-300 bg-white shadow-sm focus-within:border-red-700 focus-within:ring-4 focus-within:ring-red-100">
+                      <span className="inline-flex items-center border-r border-slate-300 bg-slate-100 px-3 text-sm font-extrabold text-slate-700">
+                        DT
+                      </span>
+                      <input
+                        className="min-h-10 w-full bg-white px-3 py-2 text-sm text-slate-900 outline-none placeholder:text-slate-400"
+                        inputMode="numeric"
+                        onBlur={() =>
+                          updateEditForm(
+                            'deliveryOrderNumber',
+                            parseDeliveryOrderDigits(editForm.deliveryOrderNumber),
+                          )
+                        }
+                        onChange={(event) => updateEditForm('deliveryOrderNumber', event.target.value)}
+                        placeholder="0001"
+                        value={editForm.deliveryOrderNumber}
+                      />
+                    </div>
+                  </label>
                   {editErrors.deliveryOrderNumber && (
                     <p className="mt-1 text-sm font-semibold text-red-600">
                       {editErrors.deliveryOrderNumber}

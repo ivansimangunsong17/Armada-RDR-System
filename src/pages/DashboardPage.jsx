@@ -88,7 +88,20 @@ function DashboardPage({ appState, dashboardTitle, dashboardDescription }) {
     { key: 'destination', label: 'Destination' },
     { key: 'totalCargo', label: 'Total Cargo', render: (row) => formatMT(row.totalCargo) },
     { key: 'totalDischarge', label: 'Discharge', render: (row) => formatMT(row.totalDischarge) },
-    { key: 'totalRemaining', label: 'Remaining', render: (row) => formatMT(row.totalRemaining) },
+    {
+      key: 'totalRemaining',
+      label: 'Remaining',
+      render: (row) => (
+        <div>
+          <span className="font-semibold">{formatMT(row.totalRemaining)}</span>
+          {Number(row.totalRemaining) < 0 && (
+            <div className="mt-1">
+              <Badge variant="danger">Over Discharge</Badge>
+            </div>
+          )}
+        </div>
+      ),
+    },
     {
       key: 'overallProgress',
       label: 'Progress',
@@ -112,7 +125,16 @@ function DashboardPage({ appState, dashboardTitle, dashboardDescription }) {
     {
       key: 'remainingOnBoard',
       label: 'Remaining On Board',
-      render: (row) => formatMT(row.remainingOnBoard),
+      render: (row) => (
+        <div>
+          <span className="font-semibold">{formatMT(row.remainingOnBoard)}</span>
+          {Number(row.remainingOnBoard) < 0 && (
+            <div className="mt-1">
+              <Badge variant="danger">Over Discharge</Badge>
+            </div>
+          )}
+        </div>
+      ),
     },
     { key: 'progressPercentage', label: 'Progress', render: (row) => formatPercentage(row.progressPercentage) },
     { key: 'totalTruck', label: 'Total Truck', render: (row) => formatTruck(row.totalTruck) },

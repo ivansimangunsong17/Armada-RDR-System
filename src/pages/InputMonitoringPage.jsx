@@ -27,6 +27,11 @@ import {
   getGateTimePayload,
   validateGateTimes,
 } from '../utils/gateTimes.js'
+import {
+  buildDeliveryOrderNumber,
+  normalizeDocumentDigits,
+  parseDeliveryOrderDigits,
+} from '../utils/documentNumbers.js'
 
 const emptyForm = {
   hatchCargoId: '',
@@ -37,6 +42,8 @@ const emptyForm = {
   ...getDefaultGateTimeFields(),
   notes: '',
 }
+
+const PAGE_SIZE = 10
 
 function getEmptyForm(overrides = {}) {
   return {
@@ -58,7 +65,10 @@ function InputMonitoringPage({ appState }) {
   const [message, setMessage] = useState('')
   const [loadError, setLoadError] = useState('')
   const [isLoading, setIsLoading] = useState(true)
+  const [isEntriesLoading, setIsEntriesLoading] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
+  const [currentPage, setCurrentPage] = useState(1)
+  const [totalEntries, setTotalEntries] = useState(0)
   const [barcodePhotoError, setBarcodePhotoError] = useState('')
   const [barcodePhotoFile, setBarcodePhotoFile] = useState(null)
   const [barcodePhotoPreviewUrl, setBarcodePhotoPreviewUrl] = useState('')
@@ -68,6 +78,9 @@ function InputMonitoringPage({ appState }) {
     () => vessels.find((vessel) => vessel.id === selectedVesselId) || vessels[0],
     [selectedVesselId, vessels],
   )
+  const totalPages = Math.max(1, Math.ceil(totalEntries / PAGE_SIZE))
+  const pageStart = totalEntries === 0 ? 0 : (currentPage - 1) * PAGE_SIZE + 1
+  const pageEnd = Math.min(currentPage * PAGE_SIZE, totalEntries)
 
   useEffect(() => {
     loadVessels()
@@ -75,7 +88,7 @@ function InputMonitoringPage({ appState }) {
 
   useEffect(() => {
     loadMonitoringData()
-  }, [selectedVessel?.id])
+  }, [selectedVessel?.id, currentPage])
 
   async function loadVessels() {
     setIsLoading(true)
@@ -101,14 +114,19 @@ function InputMonitoringPage({ appState }) {
     if (!selectedVessel?.id) {
       setEntries([])
       setHatches([])
+      setTotalEntries(0)
       return
     }
 
+    setIsEntriesLoading(true)
     setLoadError('')
     setMessage('')
 
     const [entriesResult, hatchResult] = await Promise.all([
-      getDischargeEntriesForVessel(selectedVessel.id),
+      getDischargeEntriesForVessel(selectedVessel.id, {
+        page: currentPage,
+        pageSize: PAGE_SIZE,
+      }),
       getHatchCargoByVesselIds([selectedVessel.id]),
     ])
 
@@ -116,6 +134,7 @@ function InputMonitoringPage({ appState }) {
       setLoadError('Gagal memuat input checker.')
     } else {
       setEntries(entriesResult.data)
+      setTotalEntries(entriesResult.count || 0)
       setDischargeEntries(entriesResult.data)
     }
 
@@ -130,9 +149,27 @@ function InputMonitoringPage({ appState }) {
         })),
       )
     }
+
+    setIsEntriesLoading(false)
   }
 
   function updateForm(field, value) {
+    if (field === 'plateNumber') {
+      setForm((current) => ({
+        ...current,
+        plateNumber: value.toUpperCase(),
+      }))
+      return
+    }
+
+    if (field === 'deliveryOrderNumber' || field === 'scaleTicketNumber') {
+      setForm((current) => ({
+        ...current,
+        [field]: normalizeDocumentDigits(value),
+      }))
+      return
+    }
+
     setForm((current) => ({
       ...current,
       [field]: field === 'tonnage' ? formatTonnageInput(value) : value,
@@ -187,9 +224,13 @@ function InputMonitoringPage({ appState }) {
     else if (tonnage <= 0) nextErrors.tonnage = 'Tonnage wajib lebih dari 0.'
     if (!form.deliveryOrderNumber.trim()) {
       nextErrors.deliveryOrderNumber = 'No Surat Jalan wajib diisi.'
+    } else if (!/^\d+$/.test(form.deliveryOrderNumber)) {
+      nextErrors.deliveryOrderNumber = 'No Surat Jalan hanya boleh angka.'
     }
     if (!form.scaleTicketNumber.trim()) {
       nextErrors.scaleTicketNumber = 'No SJ Timbangan wajib diisi.'
+    } else if (!/^\d+$/.test(form.scaleTicketNumber)) {
+      nextErrors.scaleTicketNumber = 'No SJ Timbangan hanya boleh angka.'
     }
     Object.assign(nextErrors, validateGateTimes(form))
 
@@ -203,8 +244,8 @@ function InputMonitoringPage({ appState }) {
       hatchCargoId: entry.hatchCargoId,
       plateNumber: entry.plateNumber,
       tonnage: formatTonnageInputFromNumber(entry.tonnage),
-      deliveryOrderNumber: entry.deliveryOrderNumber,
-      scaleTicketNumber: entry.scaleTicketNumber,
+      deliveryOrderNumber: parseDeliveryOrderDigits(entry.deliveryOrderNumber),
+      scaleTicketNumber: normalizeDocumentDigits(entry.scaleTicketNumber),
       ...getGateTimeFieldsFromEntry(entry),
       notes: entry.notes || '',
     })
@@ -234,7 +275,7 @@ function InputMonitoringPage({ appState }) {
     if (barcodePhotoFile) {
       const uploadResult = await uploadBarcodeReceiptPhoto({
         checkerId: editingEntry.checkerId,
-        deliveryOrderNumber: form.deliveryOrderNumber.trim(),
+        deliveryOrderNumber: buildDeliveryOrderNumber(form.deliveryOrderNumber),
         file: barcodePhotoFile,
         vesselId: selectedVessel.id,
       })
@@ -254,7 +295,7 @@ function InputMonitoringPage({ appState }) {
       checker_id: editingEntry.checkerId,
       plate_number: form.plateNumber.trim().toUpperCase(),
       tonnage: parseTonnageInputToNumber(form.tonnage),
-      delivery_order_number: form.deliveryOrderNumber.trim(),
+      delivery_order_number: buildDeliveryOrderNumber(form.deliveryOrderNumber),
       scale_ticket_number: form.scaleTicketNumber.trim(),
       ...getGateTimePayload(form),
       notes: form.notes.trim() || null,
@@ -296,12 +337,12 @@ function InputMonitoringPage({ appState }) {
     { key: 'gateOutDate', label: 'Gate Out Date', render: (row) => formatDate(row.gateOutDate) },
     { key: 'gateOutTime', label: 'Gate Out Time' },
     { key: 'checkerName', label: 'Checker' },
-    { key: 'plateNumber', label: 'Plate Number' },
+    { key: 'plateNumber', label: 'Plate No.' },
     { key: 'hatch', label: 'Hatch' },
     { key: 'tonnage', label: 'Tonnage', render: (row) => formatMT(row.tonnage) },
     { key: 'deliveryOrderNumber', label: 'No Surat Jalan' },
     { key: 'scaleTicketNumber', label: 'No SJ Timbangan' },
-    { key: 'barcodePhotoUrl', label: 'Foto Barcode', render: (row) => <BarcodePhotoLink url={row.barcodePhotoUrl} /> },
+    { key: 'barcodePhotoUrl', label: 'Barcode Receipt', render: (row) => <BarcodePhotoLink url={row.barcodePhotoUrl} /> },
     { key: 'notes', label: 'Notes', render: (row) => row.notes || '-' },
     {
       key: 'actions',
@@ -345,6 +386,7 @@ function InputMonitoringPage({ appState }) {
               value={selectedVessel?.id || ''}
               onChange={(event) => {
                 setSelectedVesselId(event.target.value)
+                setCurrentPage(1)
                 handleCancelEdit()
               }}
             >
@@ -405,11 +447,29 @@ function InputMonitoringPage({ appState }) {
               </div>
 
               <div>
-                <Input
-                  label="No Surat Jalan"
-                  value={form.deliveryOrderNumber}
-                  onChange={(event) => updateForm('deliveryOrderNumber', event.target.value)}
-                />
+                <label className="block">
+                  <span className="mb-1.5 block text-sm font-bold text-slate-700">
+                    No Surat Jalan
+                  </span>
+                  <div className="flex min-h-10 overflow-hidden rounded-md border border-slate-300 bg-white shadow-sm focus-within:border-red-700 focus-within:ring-4 focus-within:ring-red-100">
+                    <span className="inline-flex items-center border-r border-slate-300 bg-slate-100 px-3 text-sm font-extrabold text-slate-700">
+                      DT
+                    </span>
+                    <input
+                      className="min-h-10 w-full bg-white px-3 py-2 text-sm text-slate-900 outline-none placeholder:text-slate-400"
+                      inputMode="numeric"
+                      onBlur={() =>
+                        updateForm(
+                          'deliveryOrderNumber',
+                          parseDeliveryOrderDigits(form.deliveryOrderNumber),
+                        )
+                      }
+                      onChange={(event) => updateForm('deliveryOrderNumber', event.target.value)}
+                      placeholder="0001"
+                      value={form.deliveryOrderNumber}
+                    />
+                  </div>
+                </label>
                 {errors.deliveryOrderNumber && (
                   <p className="mt-1 text-sm font-semibold text-red-600">{errors.deliveryOrderNumber}</p>
                 )}
@@ -528,8 +588,41 @@ function InputMonitoringPage({ appState }) {
         </Modal>
       )}
 
-      <Card title={selectedVessel?.vesselName || 'Input Checker'} subtitle="Seluruh input checker untuk vessel terpilih.">
-        <Table columns={columns} data={entries} emptyMessage="Belum ada input checker untuk vessel ini." />
+      <Card
+        title={selectedVessel?.vesselName || 'Input Checker'}
+        subtitle="Data input checker per vessel. Gunakan pagination untuk menjaga halaman tetap ringan."
+      >
+        <Table
+          columns={columns}
+          data={entries}
+          emptyMessage={isEntriesLoading ? 'Memuat input checker...' : 'Belum ada input checker untuk vessel ini.'}
+        />
+        <div className="mt-4 flex flex-col gap-3 border-t border-slate-200 pt-4 text-sm text-slate-600 md:flex-row md:items-center md:justify-between">
+          <p className="font-semibold">
+            Menampilkan {pageStart}-{pageEnd} dari {totalEntries} data
+          </p>
+          <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
+              disabled={currentPage <= 1 || isEntriesLoading}
+            >
+              Prev
+            </Button>
+            <span className="rounded-md border border-slate-200 bg-white px-3 py-2 font-bold text-slate-800">
+              Page {currentPage} / {totalPages}
+            </span>
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))}
+              disabled={currentPage >= totalPages || isEntriesLoading}
+            >
+              Next
+            </Button>
+          </div>
+        </div>
       </Card>
     </div>
   )

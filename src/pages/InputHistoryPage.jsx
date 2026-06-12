@@ -26,6 +26,11 @@ import {
   getGateTimePayload,
   validateGateTimes,
 } from '../utils/gateTimes.js'
+import {
+  buildDeliveryOrderNumber,
+  normalizeDocumentDigits,
+  parseDeliveryOrderDigits,
+} from '../utils/documentNumbers.js'
 
 const emptyForm = {
   vesselId: '',
@@ -37,6 +42,8 @@ const emptyForm = {
   ...getDefaultGateTimeFields(),
   notes: '',
 }
+
+const PAGE_SIZE = 10
 
 function getEmptyForm(overrides = {}) {
   return {
@@ -62,7 +69,10 @@ function InputHistoryPage({ appState }) {
   const [loadError, setLoadError] = useState('')
   const [modalError, setModalError] = useState('')
   const [isLoading, setIsLoading] = useState(true)
+  const [isEntriesLoading, setIsEntriesLoading] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
+  const [currentPage, setCurrentPage] = useState(1)
+  const [totalEntries, setTotalEntries] = useState(0)
   const [barcodePhotoError, setBarcodePhotoError] = useState('')
   const [barcodePhotoFile, setBarcodePhotoFile] = useState(null)
   const [barcodePhotoPreviewUrl, setBarcodePhotoPreviewUrl] = useState('')
@@ -76,10 +86,17 @@ function InputHistoryPage({ appState }) {
   )
   const hatches = selectedVessel?.hatchCargoRows || []
   const visibleEntries = entries.filter((entry) => entry.vesselId === selectedVessel?.id)
+  const totalPages = Math.max(1, Math.ceil(totalEntries / PAGE_SIZE))
+  const pageStart = totalEntries === 0 ? 0 : (currentPage - 1) * PAGE_SIZE + 1
+  const pageEnd = Math.min(currentPage * PAGE_SIZE, totalEntries)
 
   useEffect(() => {
     loadData()
   }, [checkerId])
+
+  useEffect(() => {
+    loadEntries()
+  }, [checkerId, selectedVessel?.id, currentPage])
 
   async function loadData() {
     if (!checkerId) {
@@ -91,10 +108,7 @@ function InputHistoryPage({ appState }) {
     setIsLoading(true)
     setLoadError('')
 
-    const [assignedResult, entriesResult] = await Promise.all([
-      getAssignedVesselsForChecker(checkerId),
-      getDischargeEntriesForChecker(checkerId),
-    ])
+    const assignedResult = await getAssignedVesselsForChecker(checkerId)
 
     if (assignedResult.error) {
       setLoadError('Gagal memuat kapal assignment checker.')
@@ -103,17 +117,53 @@ function InputHistoryPage({ appState }) {
       setSelectedVesselId((current) => current || assignedResult.data[0]?.id || '')
     }
 
-    if (entriesResult.error) {
-      setLoadError((current) => `${current} Gagal memuat riwayat input.`.trim())
-    } else {
-      setEntries(entriesResult.data)
-      setDischargeEntries(entriesResult.data)
-    }
-
     setIsLoading(false)
   }
 
+  async function loadEntries() {
+    if (!checkerId || !selectedVessel?.id) {
+      setEntries([])
+      setTotalEntries(0)
+      return
+    }
+
+    setIsEntriesLoading(true)
+    setLoadError('')
+
+    const entriesResult = await getDischargeEntriesForChecker(checkerId, {
+      page: currentPage,
+      pageSize: PAGE_SIZE,
+      vesselId: selectedVessel.id,
+    })
+
+    if (entriesResult.error) {
+      setLoadError('Gagal memuat riwayat input.')
+    } else {
+      setEntries(entriesResult.data)
+      setTotalEntries(entriesResult.count || 0)
+      setDischargeEntries(entriesResult.data)
+    }
+
+    setIsEntriesLoading(false)
+  }
+
   function updateForm(field, value) {
+    if (field === 'plateNumber') {
+      setForm((current) => ({
+        ...current,
+        plateNumber: value.toUpperCase(),
+      }))
+      return
+    }
+
+    if (field === 'deliveryOrderNumber' || field === 'scaleTicketNumber') {
+      setForm((current) => ({
+        ...current,
+        [field]: normalizeDocumentDigits(value),
+      }))
+      return
+    }
+
     setForm((current) => ({
       ...current,
       [field]: field === 'tonnage' ? formatTonnageInput(value) : value,
@@ -168,9 +218,13 @@ function InputHistoryPage({ appState }) {
     else if (tonnage <= 0) nextErrors.tonnage = 'Tonnage wajib lebih dari 0.'
     if (!form.deliveryOrderNumber.trim()) {
       nextErrors.deliveryOrderNumber = 'No Surat Jalan wajib diisi.'
+    } else if (!/^\d+$/.test(form.deliveryOrderNumber)) {
+      nextErrors.deliveryOrderNumber = 'No Surat Jalan hanya boleh angka.'
     }
     if (!form.scaleTicketNumber.trim()) {
       nextErrors.scaleTicketNumber = 'No SJ Timbangan wajib diisi.'
+    } else if (!/^\d+$/.test(form.scaleTicketNumber)) {
+      nextErrors.scaleTicketNumber = 'No SJ Timbangan hanya boleh angka.'
     }
     Object.assign(nextErrors, validateGateTimes(form))
 
@@ -186,8 +240,8 @@ function InputHistoryPage({ appState }) {
       hatchCargoId: entry.hatchCargoId,
       plateNumber: entry.plateNumber,
       tonnage: formatTonnageInputFromNumber(entry.tonnage),
-      deliveryOrderNumber: entry.deliveryOrderNumber,
-      scaleTicketNumber: entry.scaleTicketNumber,
+      deliveryOrderNumber: parseDeliveryOrderDigits(entry.deliveryOrderNumber),
+      scaleTicketNumber: normalizeDocumentDigits(entry.scaleTicketNumber),
       ...getGateTimeFieldsFromEntry(entry),
       notes: entry.notes || '',
     })
@@ -220,7 +274,7 @@ function InputHistoryPage({ appState }) {
     if (barcodePhotoFile) {
       const uploadResult = await uploadBarcodeReceiptPhoto({
         checkerId,
-        deliveryOrderNumber: form.deliveryOrderNumber.trim(),
+        deliveryOrderNumber: buildDeliveryOrderNumber(form.deliveryOrderNumber),
         file: barcodePhotoFile,
         vesselId: form.vesselId,
       })
@@ -240,7 +294,7 @@ function InputHistoryPage({ appState }) {
       checker_id: checkerId,
       plate_number: form.plateNumber.trim().toUpperCase(),
       tonnage: parseTonnageInputToNumber(form.tonnage),
-      delivery_order_number: form.deliveryOrderNumber.trim(),
+      delivery_order_number: buildDeliveryOrderNumber(form.deliveryOrderNumber),
       scale_ticket_number: form.scaleTicketNumber.trim(),
       ...getGateTimePayload(form),
       notes: form.notes.trim() || null,
@@ -281,7 +335,7 @@ function InputHistoryPage({ appState }) {
     {
       key: 'no',
       label: 'No',
-      render: (_row, index) => index + 1,
+      render: (_row, index) => (currentPage - 1) * PAGE_SIZE + index + 1,
     },
     { key: 'plateNumber', label: 'Plat' },
     { key: 'hatch', label: 'Hatch' },
@@ -343,6 +397,7 @@ function InputHistoryPage({ appState }) {
               value={selectedVessel?.id || ''}
               onChange={(event) => {
                 setSelectedVesselId(event.target.value)
+                setCurrentPage(1)
                 handleCancelEdit()
               }}
               disabled={Boolean(editingEntry)}
@@ -406,11 +461,29 @@ function InputHistoryPage({ appState }) {
                 )}
               </div>
               <div>
-                <Input
-                  label="No Surat Jalan"
-                  value={form.deliveryOrderNumber}
-                  onChange={(event) => updateForm('deliveryOrderNumber', event.target.value)}
-                />
+                <label className="block">
+                  <span className="mb-1.5 block text-sm font-bold text-slate-700">
+                    No Surat Jalan
+                  </span>
+                  <div className="flex min-h-10 overflow-hidden rounded-md border border-slate-300 bg-white shadow-sm focus-within:border-red-700 focus-within:ring-4 focus-within:ring-red-100">
+                    <span className="inline-flex items-center border-r border-slate-300 bg-slate-100 px-3 text-sm font-extrabold text-slate-700">
+                      DT
+                    </span>
+                    <input
+                      className="min-h-10 w-full bg-white px-3 py-2 text-sm text-slate-900 outline-none placeholder:text-slate-400"
+                      inputMode="numeric"
+                      onBlur={() =>
+                        updateForm(
+                          'deliveryOrderNumber',
+                          parseDeliveryOrderDigits(form.deliveryOrderNumber),
+                        )
+                      }
+                      onChange={(event) => updateForm('deliveryOrderNumber', event.target.value)}
+                      placeholder="0001"
+                      value={form.deliveryOrderNumber}
+                    />
+                  </div>
+                </label>
                 {errors.deliveryOrderNumber && (
                   <p className="mt-1 text-sm font-semibold text-red-600">
                     {errors.deliveryOrderNumber}
@@ -539,8 +612,34 @@ function InputHistoryPage({ appState }) {
           tableClassName="min-w-full"
           columns={columns}
           data={visibleEntries}
-          emptyMessage="Belum ada data input untuk kapal ini."
+          emptyMessage={isEntriesLoading ? 'Memuat data...' : 'Belum ada data input untuk kapal ini.'}
         />
+        <div className="mt-4 flex flex-col gap-3 border-t border-slate-200 pt-4 text-sm text-slate-600 md:flex-row md:items-center md:justify-between">
+          <p className="font-semibold">
+            Menampilkan {pageStart}-{pageEnd} dari {totalEntries} data
+          </p>
+          <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
+              disabled={currentPage <= 1 || isEntriesLoading}
+            >
+              Prev
+            </Button>
+            <span className="rounded-md border border-slate-200 bg-white px-3 py-2 font-bold text-slate-800">
+              Page {currentPage} / {totalPages}
+            </span>
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))}
+              disabled={currentPage >= totalPages || isEntriesLoading}
+            >
+              Next
+            </Button>
+          </div>
+        </div>
       </Card>
     </div>
   )

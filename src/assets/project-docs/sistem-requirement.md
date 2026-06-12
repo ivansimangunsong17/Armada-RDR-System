@@ -1,4 +1,4 @@
-# Running Discharge Report System (RDRS) - MVP Requirements
+# Running Discharge Report System (RDRS) - MVP Requirements Updated
 
 ## Tujuan Sistem
 
@@ -30,6 +30,7 @@ Hak akses:
 * Kelola User
 * Melihat seluruh input checker
 * Mengedit data input checker
+* Melihat foto barcode
 * Melihat Running Report
 * Melihat Report Shift
 * Melihat Report 2 Jam
@@ -42,7 +43,9 @@ Hak akses:
 * Login
 * Melihat vessel yang ditugaskan
 * Input data truck keluar
-* Edit data yang sudah tersimpan
+* Upload foto struk barcode
+* Edit data yang sudah tersimpan melalui modal
+* Replace foto barcode saat edit
 * Melihat Riwayat Input
 * Melihat Running Report vessel yang ditugaskan
 
@@ -113,6 +116,7 @@ Aturan:
 
 * Satu checker dapat menangani lebih dari satu vessel.
 * Checker hanya dapat melihat vessel yang ditugaskan kepadanya.
+* Vessel dengan status Completed tidak tampil di Input Data Checker.
 
 ---
 
@@ -125,20 +129,184 @@ Field input:
 * Hatch
 * No Surat Jalan
 * No SJ Timbangan
+* Gate In Date
+* Gate In Time
+* Gate Out Date
+* Gate Out Time
+* Foto Struk Barcode
 * Notes
 
 Field otomatis:
 
 * Destination
-* Gate Out Date
-* Gate Out Time
+* Created At
+* Updated At
+
+Catatan:
+
+* Gate In dan Gate Out diisi manual oleh checker sesuai waktu kejadian lapangan.
+* Default tanggal/jam boleh menggunakan waktu saat ini, tetapi tetap bisa diubah.
+* Created At adalah waktu data dibuat di sistem.
+* Updated At adalah waktu data terakhir diperbarui di sistem.
+* Gate Out tetap menjadi dasar Report Shift dan Report 2 Jam.
 
 Aturan:
 
 * No Surat Jalan harus unik per vessel.
 * No SJ Timbangan harus unik per vessel.
-* Checker dapat mengedit data yang sudah tersimpan.
+* Gate In wajib diisi.
+* Gate Out wajib diisi.
+* Gate Out tidak boleh lebih awal dari Gate In.
+* Foto struk barcode bersifat opsional.
+* Checker dapat mengedit data yang sudah tersimpan melalui modal.
+* Checker dapat mengganti foto barcode saat edit.
 * Tidak ada hard delete.
+* Tidak ada void data pada MVP.
+
+---
+
+## UI Input Checker
+
+Form Input Checker dibagi menjadi 3 section:
+
+### 1. Truck Information
+
+Berisi:
+
+* Plate Number
+* Hatch
+* Tonnage
+* No Surat Jalan
+* No SJ Timbangan
+* Notes
+
+Urutan mengikuti pola operasional:
+
+Truck → Cargo → Dokumen
+
+### 2. Operational Timeline
+
+Berisi:
+
+* Gate In Date
+* Gate In Time
+* Gate Out Date
+* Gate Out Time
+
+Visual:
+
+* Gate In menggunakan aksen biru.
+* Gate Out menggunakan aksen orange.
+* Konsep ini disiapkan agar mudah dikembangkan menjadi Truck Trip Monitoring.
+
+### 3. Documentation
+
+Berisi:
+
+* Upload Foto Struk Barcode
+* Preview/link foto barcode
+
+Helper text:
+
+Upload foto struk barcode sebagai bukti dokumen lapangan.
+
+---
+
+## Foto Struk Barcode
+
+Foto barcode masuk ke scope MVP.
+
+Aturan:
+
+* Upload bersifat opsional.
+* Format file yang diterima:
+
+  * JPG
+  * JPEG
+  * PNG
+  * WEBP
+* Maksimal ukuran file 5 MB.
+* File disimpan di Supabase Storage bucket:
+
+truck-barcode-receipts
+
+* URL/path file disimpan di:
+
+discharge_entries.barcode_photo_url
+
+* Foto tampil di:
+
+  * Riwayat Input Checker
+  * Input Monitoring Admin
+
+* Foto tidak ditampilkan di Running Report MVP.
+
+Saat edit:
+
+* Jika tidak memilih foto baru, foto lama tetap digunakan.
+* Jika memilih foto baru, foto baru diupload dan barcode_photo_url diperbarui.
+* Foto lama tidak dihapus dari Storage pada MVP.
+
+---
+
+## Edit Data Checker
+
+Edit data checker menggunakan modal.
+
+Modal edit berisi:
+
+* Plate Number
+* Tonnage
+* Hatch
+* No Surat Jalan
+* No SJ Timbangan
+* Gate In Date
+* Gate In Time
+* Gate Out Date
+* Gate Out Time
+* Notes
+* Foto barcode saat ini
+* Upload foto barcode baru
+
+Aturan modal:
+
+* Cancel / X Close tidak mengubah data.
+* Save Changes menyimpan perubahan ke Supabase.
+* Jika update berhasil, modal tertutup dan data refresh.
+* Jika update gagal, modal tetap terbuka dan error tampil di dalam modal.
+* Tidak ada tombol Delete.
+* Tidak ada tombol Void.
+
+---
+
+## Input Monitoring
+
+Khusus Admin.
+
+Fungsi:
+
+1. Pilih vessel aktif.
+2. Lihat seluruh input checker.
+3. Edit data jika ada kesalahan.
+4. Melihat dan mengganti foto barcode.
+5. Melihat Gate In dan Gate Out.
+
+Data yang ditampilkan:
+
+* Gate In Date
+* Gate In Time
+* Gate Out Date
+* Gate Out Time
+* Checker
+* Plate Number
+* Hatch
+* Tonnage
+* No Surat Jalan
+* No SJ Timbangan
+* Foto Barcode
+* Notes
+
+Tidak ada hard delete.
 
 ---
 
@@ -146,14 +314,7 @@ Aturan:
 
 Sistem menggunakan format tonnage operasional yang umum digunakan pada kegiatan discharge.
 
-Tujuan:
-
-* Memudahkan checker saat input
-* Menghilangkan kebingungan antara titik dan koma
-* Menyeragamkan tampilan di seluruh sistem
-* Menyamakan tampilan dengan report operasional lapangan
-
-### Aturan Umum
+### Input Operasional
 
 Checker dan Admin cukup mengetik angka tanpa tanda baca.
 
@@ -231,53 +392,98 @@ Nilai tersimpan:
 
 Database tidak mengikuti format tampilan. Format tampilan hanya untuk kebutuhan UI dan report.
 
-### Tampilan Sistem
+---
 
-Semua angka ditampilkan menggunakan format koma:
+## Running Report
+
+Report utama sistem.
+
+Menampilkan:
+
+* Total Cargo
+* Total Discharge
+* Remaining Cargo
+* Progress %
+* Total Truck
+* Average Load
+* Total Truck per Hatch
+* Est. Truck Requirement
+* Summary per Hatch
+* Destination Summary
+
+### Total Truck per Hatch
+
+Menggunakan total input truck per hatch.
+
+### Est. Truck Requirement
+
+Rumus:
+
+Est. Truck Requirement = Remaining Cargo ÷ Average Load Overall
+
+Average Load Overall:
+
+Average Load Overall = Total Discharge ÷ Total Truck
+
+Aturan:
+
+* Estimasi truck dibulatkan ke atas.
+* Jika Average Load Overall = 0, tampilkan `-`.
+* Jika Remaining Cargo <= 0, tampilkan `-` atau `0` sesuai kebutuhan tampilan report.
+
+---
+
+## Format Tampilan Report
+
+Ada perbedaan format antara input operasional dan report management.
+
+### Input / Operasional
+
+Dipakai di:
+
+* Input Data Checker
+* Riwayat Input
+* Input Monitoring
+* Vessel & Cargo Information
+
+Contoh:
 
 * 40,491
 * 26,320
 * 9,999,000
-* 49,498,584
 
-Format ini wajib digunakan pada:
+### Running Report Web
 
-* Vessel & Cargo Information
-* Final Stowage Plan
-* Input Data Checker
-* Riwayat Input
-* Input Monitoring
-* Running Report
-* Report Shift
-* Report 2 Jam
-* Export Excel
-* Dashboard
+Menggunakan format yang lebih mudah dibaca oleh supervisor/management.
 
----
+Contoh:
 
-## Input Monitoring
+* 40.491 MT
+* 9,999.000 MT
+* 49,380.320 MT
 
-Khusus Admin.
+Tujuan:
 
-Fungsi:
+* Menghindari salah baca angka besar seperti 49,380,320.
+* Membuat report lebih mudah dipahami oleh supervisor, manager, dan owner.
 
-1. Pilih vessel aktif.
-2. Lihat seluruh input checker.
-3. Edit data jika ada kesalahan.
+### Export Excel
 
-Data yang ditampilkan:
+Export Excel mengikuti format report lapangan yang biasa digunakan.
 
-* Gate Out Date
-* Gate Out Time
-* Checker
-* Plate Number
-* Hatch
-* Tonnage
-* No Surat Jalan
-* No SJ Timbangan
-* Notes
+Contoh:
 
-Tidak ada hard delete.
+* 40,491
+* 9,999,000
+* 49,380,320
+
+Format Excel dibuat mendekati contoh report manual yang sudah digunakan di lapangan.
+
+### Export PDF
+
+PDF belum termasuk MVP utama.
+
+Jika dibuat, PDF menggunakan format clean dan profesional untuk management/client.
 
 ---
 
@@ -291,7 +497,9 @@ Average Load = Total Discharge ÷ Total DT
 
 Remaining Cargo = Initial Cargo − Total Discharge
 
-Progress % = (Total Discharge ÷ Initial Cargo) × 100
+Progress % = Total Discharge ÷ Initial Cargo × 100
+
+Est. Truck Requirement = Remaining Cargo ÷ Average Load Overall
 
 ---
 
@@ -301,16 +509,6 @@ Progress % = (Total Discharge ÷ Initial Cargo) × 100
 
 Report utama sistem.
 
-Menampilkan:
-
-* Total Cargo
-* Total Discharge
-* Remaining Cargo
-* Progress %
-* Total DT
-* Average Load
-* Summary per Hatch
-
 ### Report Shift
 
 Shift:
@@ -319,6 +517,8 @@ Shift:
 * Shift 2: 16.00 - 00.00
 * Shift 3: 00.00 - 08.00
 
+Report Shift menggunakan Gate Out Time sebagai basis pembagian shift.
+
 ### Report Periode 2 Jam
 
 Contoh:
@@ -326,6 +526,8 @@ Contoh:
 * 00.00 - 02.00
 * 02.00 - 04.00
 * 04.00 - 06.00
+
+Report Periode 2 Jam menggunakan Gate Out Time sebagai basis periode.
 
 ---
 
@@ -340,6 +542,8 @@ Tersedia untuk:
 * Running Report
 * Report Shift
 * Report 2 Jam
+
+PDF tidak termasuk scope MVP, tetapi dapat menjadi enhancement setelah format report stabil.
 
 ---
 
@@ -359,6 +563,10 @@ Database:
 
 * PostgreSQL
 
+Storage:
+
+* Supabase Storage
+
 Deployment:
 
 * Vercel
@@ -372,6 +580,9 @@ Fokus MVP:
 * Vessel & Cargo Information
 * Assign Checker
 * Input Data Checker
+* Gate In / Gate Out manual
+* Upload Foto Struk Barcode
+* Modal Edit Data Checker
 * Input Monitoring
 * Running Report
 * Export Excel
@@ -381,12 +592,13 @@ Tidak termasuk MVP:
 * PDF
 * Email Report
 * Notifikasi
+* Truck Trip Monitoring Phase 2
 
 ---
 
 ## Phase 2 - Truck Trip Monitoring
 
-Phase 2 ditambahkan sebagai modul terpisah dari MVP utama.
+Phase 2 tetap dipisahkan dari MVP utama.
 
 Prinsip implementasi:
 
@@ -396,221 +608,14 @@ Prinsip implementasi:
 * Monitoring perjalanan truck dibuat sebagai menu dan tabel terpisah.
 * Integrasi ke report utama hanya dipertimbangkan setelah Phase 2 stabil dan disetujui.
 
-### Tujuan Phase 2
+Fokus Phase 2:
 
-Memonitor siklus perjalanan truck dari pelabuhan ke gudang, proses timbang di gudang, lalu kembali ke pelabuhan.
-
-Informasi yang dipantau:
-
-* Data gate in dan gate out pelabuhan.
-* Data tonnage pelabuhan.
-* Data identitas truck dan dokumen jalan.
-* Data gate in dan gate out gudang.
-* Data tonnage gudang.
-* Selisih tonnage pelabuhan dan gudang.
-* Durasi perjalanan dan durasi truck berada di gudang.
-* Status perjalanan truck.
-
-### Input Checker Pelabuhan
-
-Checker pelabuhan membuat trip baru saat truck tercatat di area pelabuhan.
-
-Field input:
-
-* Foto struk barcode.
-* Gate In Pelabuhan.
-* Gate Out Pelabuhan.
-* Tonnage Pelabuhan.
-* Plate Number.
-* Hatch.
-* No Surat Jalan.
-* No SJ Timbangan.
-
-Aturan:
-
-* Plate Number wajib diisi.
-* Hatch wajib terhubung ke vessel dan hatch yang sedang aktif.
-* No Surat Jalan direkomendasikan unik per vessel.
-* No SJ Timbangan direkomendasikan unik per vessel.
-* Foto struk barcode disimpan sebagai file attachment, bukan sebagai base64 di tabel utama.
-* Gate Out Pelabuhan menjadi titik awal perhitungan durasi perjalanan ke gudang.
-
-### Input Checker Gudang
-
-Checker gudang melengkapi data trip yang sudah dibuat oleh checker pelabuhan.
-
-Field input:
-
-* Gate In Gudang.
-* Tonnage / Timbangan Gudang.
-* Gate Out Gudang.
-* Foto struk timbangan gudang jika ada.
-* Notes.
-
-Aturan:
-
-* Checker gudang mencari trip berdasarkan Plate Number, No Surat Jalan, No SJ Timbangan, atau status trip.
-* Gate In Gudang wajib lebih besar atau sama dengan Gate Out Pelabuhan.
-* Gate Out Gudang wajib lebih besar atau sama dengan Gate In Gudang.
-* Foto struk timbangan gudang bersifat opsional.
-* Notes digunakan untuk selisih tonnage, kendala operasional, antrean, atau koreksi lapangan.
-
-### Perhitungan Sistem Phase 2
-
-Selisih Tonnage = Tonnage Pelabuhan - Tonnage Gudang
-
-Durasi Pelabuhan ke Gudang = Gate In Gudang - Gate Out Pelabuhan
-
-Durasi Truck di Gudang = Gate Out Gudang - Gate In Gudang
-
-Durasi Truck Kembali ke Pelabuhan = Gate In Pelabuhan berikutnya - Gate Out Gudang sebelumnya
-
-Catatan untuk durasi kembali ke pelabuhan:
-
-* Perhitungan hanya bisa dilakukan jika sistem menemukan trip berikutnya dengan Plate Number yang sama.
-* Jika belum ada Gate In Pelabuhan berikutnya, durasi kembali ditampilkan sebagai `Belum kembali`.
-* Jika ada jeda operasional yang tidak bisa diverifikasi, status perlu ditandai untuk review.
-
-### Status Perjalanan Truck
-
-Status direkomendasikan:
-
-* `at_port` - truck sudah gate in pelabuhan.
-* `departed_port` - truck sudah gate out pelabuhan menuju gudang.
-* `arrived_warehouse` - truck sudah gate in gudang.
-* `left_warehouse` - truck sudah gate out gudang.
-* `returned_port` - truck sudah terdeteksi gate in pelabuhan pada trip berikutnya.
-* `completed` - seluruh data wajib trip sudah lengkap.
-* `needs_review` - data tidak konsisten, ada selisih besar, atau timestamp tidak valid.
-
-Aturan status:
-
-* Status berubah otomatis mengikuti kelengkapan timestamp.
-* Admin atau supervisor dapat memberi tanda `needs_review` jika ada anomali.
-* Trip tidak dihapus permanen; koreksi dilakukan melalui edit dan audit trail.
-
-### Menu Baru yang Dibutuhkan
-
-Menu untuk checker pelabuhan:
-
-* Truck Trip - Pelabuhan
-* Input Trip Pelabuhan
-* Riwayat Trip Pelabuhan
-
-Menu untuk checker gudang:
-
-* Truck Trip - Gudang
-* Update Trip Gudang
-* Riwayat Trip Gudang
-
-Menu untuk admin/supervisor:
-
-* Truck Trip Monitoring
-* Trip Detail
-* Trip Exception / Needs Review
-* Export Trip Monitoring
-
-Catatan:
-
-* Menu Phase 2 harus dipisahkan dari menu Running Report MVP.
-* Dashboard utama MVP tidak wajib berubah.
-* Jika diperlukan ringkasan Phase 2, buat dashboard khusus Truck Trip Monitoring.
-
-### Flow Checker Pelabuhan
-
-1. Checker pelabuhan membuka menu `Truck Trip - Pelabuhan`.
-2. Pilih vessel aktif dan hatch.
-3. Input Plate Number, No Surat Jalan, No SJ Timbangan, tonnage pelabuhan, Gate In Pelabuhan, Gate Out Pelabuhan.
-4. Upload foto struk barcode.
-5. Sistem membuat record trip dengan status minimal `departed_port` jika Gate Out Pelabuhan sudah terisi.
-6. Trip muncul di daftar monitoring untuk checker gudang.
-7. Checker pelabuhan dapat melihat riwayat trip yang dibuat dan memperbaiki data sesuai hak akses.
-
-### Flow Checker Gudang
-
-1. Checker gudang membuka menu `Truck Trip - Gudang`.
-2. Cari trip berdasarkan Plate Number, No Surat Jalan, No SJ Timbangan, atau daftar truck yang statusnya `departed_port`.
-3. Input Gate In Gudang saat truck tiba.
-4. Input tonnage gudang dan upload foto struk timbangan gudang jika ada.
-5. Input Gate Out Gudang saat truck keluar dari gudang.
-6. Tambahkan Notes jika ada selisih, antrean, kerusakan, atau koreksi data.
-7. Sistem menghitung selisih tonnage dan durasi gudang.
-8. Status trip berubah menjadi `left_warehouse` atau `needs_review` jika ada anomali.
-
-### Rekomendasi Perubahan Database yang Aman
-
-Gunakan tabel baru agar tidak mengganggu tabel MVP `discharge_entries` dan view report utama.
-
-Tabel baru yang direkomendasikan:
-
-```sql
-create table public.truck_trips (
-  id uuid primary key default gen_random_uuid(),
-  vessel_id uuid not null references public.vessels(id),
-  hatch_cargo_id uuid references public.hatch_cargo(id),
-  port_checker_id uuid references public.profiles(id),
-  warehouse_checker_id uuid references public.profiles(id),
-  plate_number text not null,
-  delivery_order_number text not null,
-  port_scale_ticket_number text not null,
-  barcode_receipt_url text,
-  port_gate_in_at timestamptz,
-  port_gate_out_at timestamptz,
-  port_tonnage numeric(14, 3) check (port_tonnage >= 0),
-  warehouse_gate_in_at timestamptz,
-  warehouse_tonnage numeric(14, 3) check (warehouse_tonnage >= 0),
-  warehouse_gate_out_at timestamptz,
-  warehouse_scale_receipt_url text,
-  notes text,
-  status text not null default 'at_port',
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now(),
-  constraint truck_trips_delivery_order_per_vessel_unique
-    unique (vessel_id, delivery_order_number),
-  constraint truck_trips_port_scale_ticket_per_vessel_unique
-    unique (vessel_id, port_scale_ticket_number)
-);
-```
-
-Index yang direkomendasikan:
-
-```sql
-create index truck_trips_vessel_id_idx on public.truck_trips (vessel_id);
-create index truck_trips_plate_number_idx on public.truck_trips (plate_number);
-create index truck_trips_status_idx on public.truck_trips (status);
-create index truck_trips_port_gate_out_at_idx on public.truck_trips (port_gate_out_at);
-create index truck_trips_warehouse_gate_in_at_idx on public.truck_trips (warehouse_gate_in_at);
-```
-
-View terpisah untuk monitoring Phase 2:
-
-```sql
-create view public.truck_trip_monitoring as
-select
-  tt.*,
-  (tt.port_tonnage - tt.warehouse_tonnage) as tonnage_difference,
-  (tt.warehouse_gate_in_at - tt.port_gate_out_at) as port_to_warehouse_duration,
-  (tt.warehouse_gate_out_at - tt.warehouse_gate_in_at) as warehouse_duration
-from public.truck_trips tt;
-```
-
-Rekomendasi storage:
-
-* Buat bucket Supabase Storage khusus `truck-trip-receipts`.
-* Simpan URL atau path file di `barcode_receipt_url` dan `warehouse_scale_receipt_url`.
-* Batasi akses upload berdasarkan role checker.
-
-Rekomendasi audit:
-
-* Tambahkan tabel `truck_trip_audit_logs` pada fase implementasi jika koreksi data harus dilacak detail.
-* Minimal simpan `created_at`, `updated_at`, `port_checker_id`, dan `warehouse_checker_id`.
-
-### Batasan Phase 2
-
-Belum termasuk:
-
-* Perubahan Running Report utama.
-* Perubahan rumus total discharge MVP.
-* Integrasi otomatis ke invoice atau billing.
-* GPS tracking real-time.
-* Notifikasi otomatis.
+* Gate In Pelabuhan
+* Gate Out Pelabuhan
+* Gate In Gudang
+* Timbangan Gudang
+* Gate Out Gudang
+* Selisih tonnage pelabuhan dan gudang
+* Durasi perjalanan truck
+* Status perjalanan truck
+* Foto struk gudang

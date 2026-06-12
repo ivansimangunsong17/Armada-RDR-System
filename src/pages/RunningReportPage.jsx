@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
+import Badge from '../components/ui/Badge.jsx'
 import Button from '../components/ui/Button.jsx'
 import Card from '../components/ui/Card.jsx'
 import Select from '../components/ui/Select.jsx'
@@ -10,13 +11,13 @@ import {
 import { exportRunningReportExcel } from '../services/excelExportService.js'
 import { formatDate, formatPercentage, formatTruck } from '../utils/formatters.js'
 
-function formatManagementMT(value) {
+function formatManagementNumber(value) {
   const numericValue = Number(value) || 0
 
-  return `${numericValue.toLocaleString('en-US', {
+  return numericValue.toLocaleString('en-US', {
     minimumFractionDigits: 3,
     maximumFractionDigits: 3,
-  })} MT`
+  })
 }
 
 function getEstimatedTruckRequirement(remainingCargo, averageLoadOverall) {
@@ -32,6 +33,34 @@ function getEstimatedTruckRequirement(remainingCargo, averageLoadOverall) {
 
 function formatTruckRequirement(value) {
   return value ? formatTruck(value) : '-'
+}
+
+function getAverageProgressVessel(rows) {
+  if (!rows.length) {
+    return 0
+  }
+
+  const totalProgress = rows.reduce((total, row) => {
+    return total + (Number(row.progressPercentage) || 0)
+  }, 0)
+
+  return totalProgress / rows.length
+}
+
+function getHatchLagStatus(gap) {
+  if (gap >= -5) {
+    return { label: 'Normal', variant: 'normal' }
+  }
+
+  if (gap >= -10) {
+    return { label: 'Perlu Dipantau', variant: 'watch' }
+  }
+
+  if (gap >= -20) {
+    return { label: 'Palka Tertinggal', variant: 'lagging' }
+  }
+
+  return { label: 'Critical / Prioritas Utama', variant: 'critical' }
 }
 
 function getSelectedVesselStorageKey(currentUser) {
@@ -107,6 +136,7 @@ function RunningReportPage({ appState }) {
 
   const runningReport = runningRows.filter((row) => row.vesselId === selectedVessel?.id)
   const summaryReport = buildSummary(runningReport)
+  const averageProgressVessel = getAverageProgressVessel(runningReport)
 
   const averageLoad = summaryReport.averageLoadPerTruck
   const estimatedTruckRequirementTotal = getEstimatedTruckRequirement(
@@ -114,12 +144,13 @@ function RunningReportPage({ appState }) {
     averageLoad,
   )
   const summaryCards = [
-    { label: 'Total Cargo', value: formatManagementMT(summaryReport.totalCargo) },
-    { label: 'Total Discharge', value: formatManagementMT(summaryReport.totalDischarge) },
-    { label: 'Remaining Cargo', value: formatManagementMT(summaryReport.totalRemaining) },
+    { label: 'Total Cargo', value: formatManagementNumber(summaryReport.totalCargo) },
+    { label: 'Total Discharge', value: formatManagementNumber(summaryReport.totalDischarge) },
+    { label: 'Remaining Cargo', value: formatManagementNumber(summaryReport.totalRemaining) },
     { label: 'Progress %', value: formatPercentage(summaryReport.overallProgress) },
+    { label: 'Average Progress Vessel', value: formatPercentage(averageProgressVessel) },
     { label: 'Total Truck', value: formatTruck(summaryReport.totalTruck) },
-    { label: 'Average Load', value: formatManagementMT(averageLoad) },
+    { label: 'Average Load', value: formatManagementNumber(averageLoad) },
   ]
 
   function handlePrint() {
@@ -244,6 +275,7 @@ function RunningReportPage({ appState }) {
                     <th className="border border-slate-200 px-4 py-3 text-right font-extrabold">Discharge</th>
                     <th className="border border-slate-200 px-4 py-3 text-right font-extrabold">Remaining</th>
                     <th className="border border-slate-200 px-4 py-3 text-right font-extrabold">Progress %</th>
+                    <th className="border border-slate-200 px-4 py-3 text-left font-extrabold">Status</th>
                     <th className="border border-slate-200 px-4 py-3 text-right font-extrabold">Total Truck</th>
                     <th className="border border-slate-200 px-4 py-3 text-right font-extrabold">
                       Est. Truck Requirement
@@ -256,17 +288,27 @@ function RunningReportPage({ appState }) {
                       row.remainingOnBoard,
                       averageLoad,
                     )
+                    const progressGap = (Number(row.progressPercentage) || 0) - averageProgressVessel
+                    const hatchLagStatus = getHatchLagStatus(progressGap)
 
                     return (
                       <tr key={row.hatch} className="hover:bg-red-50/40">
                         <td className="border border-slate-200 px-4 py-3 font-bold text-slate-900">{row.hatch}</td>
-                        <td className="border border-slate-200 px-4 py-3 text-right">{formatManagementMT(row.finalStowage)}</td>
-                        <td className="border border-slate-200 px-4 py-3 text-right">{formatManagementMT(row.totalDischarge)}</td>
+                        <td className="border border-slate-200 px-4 py-3 text-right">{formatManagementNumber(row.finalStowage)}</td>
+                        <td className="border border-slate-200 px-4 py-3 text-right">{formatManagementNumber(row.totalDischarge)}</td>
                         <td className="border border-slate-200 px-4 py-3 text-right font-bold text-slate-900">
-                          {formatManagementMT(row.remainingOnBoard)}
+                          {formatManagementNumber(row.remainingOnBoard)}
+                          {Number(row.remainingOnBoard) < 0 && (
+                            <div className="mt-1">
+                              <Badge variant="danger">Over Discharge</Badge>
+                            </div>
+                          )}
                         </td>
                         <td className="border border-slate-200 px-4 py-3 text-right">
                           {formatPercentage(row.progressPercentage)}
+                        </td>
+                        <td className="border border-slate-200 px-4 py-3">
+                          <Badge variant={hatchLagStatus.variant}>{hatchLagStatus.label}</Badge>
                         </td>
                         <td className="border border-slate-200 px-4 py-3 text-right">
                           {formatTruck(row.totalTruck)}
@@ -280,17 +322,23 @@ function RunningReportPage({ appState }) {
                   <tr className="bg-slate-100 font-extrabold text-slate-950">
                     <td className="border border-slate-200 px-4 py-3">TOTAL</td>
                     <td className="border border-slate-200 px-4 py-3 text-right">
-                      {formatManagementMT(summaryReport.totalCargo)}
+                      {formatManagementNumber(summaryReport.totalCargo)}
                     </td>
                     <td className="border border-slate-200 px-4 py-3 text-right">
-                      {formatManagementMT(summaryReport.totalDischarge)}
+                      {formatManagementNumber(summaryReport.totalDischarge)}
                     </td>
                     <td className="border border-slate-200 px-4 py-3 text-right">
-                      {formatManagementMT(summaryReport.totalRemaining)}
+                      {formatManagementNumber(summaryReport.totalRemaining)}
+                      {Number(summaryReport.totalRemaining) < 0 && (
+                        <div className="mt-1">
+                          <Badge variant="danger">Over Discharge</Badge>
+                        </div>
+                      )}
                     </td>
                     <td className="border border-slate-200 px-4 py-3 text-right">
                       {formatPercentage(summaryReport.overallProgress)}
                     </td>
+                    <td className="border border-slate-200 px-4 py-3">-</td>
                     <td className="border border-slate-200 px-4 py-3 text-right">
                       {formatTruck(summaryReport.totalTruck)}
                     </td>
@@ -313,7 +361,7 @@ function RunningReportPage({ appState }) {
                         Average load / truck
                       </td>
                       <td className="border border-slate-200 px-4 py-3 text-right font-bold">
-                        {formatManagementMT(averageLoad)}
+                        {formatManagementNumber(averageLoad)}
                       </td>
                     </tr>
                     <tr>
@@ -346,13 +394,13 @@ function RunningReportPage({ appState }) {
                         {selectedVessel?.destination || '-'}
                       </td>
                       <td className="border border-slate-200 px-4 py-3 text-center">
-                        {formatManagementMT(summaryReport.totalDischarge)}
+                        {formatManagementNumber(summaryReport.totalDischarge)}
                       </td>
                       <td className="border border-slate-200 px-4 py-3 text-center">
                         {formatTruck(summaryReport.totalTruck)}
                       </td>
                       <td className="border border-slate-200 px-4 py-3 text-center">
-                        {formatManagementMT(averageLoad)}
+                        {formatManagementNumber(averageLoad)}
                       </td>
                     </tr>
                   </tbody>
