@@ -147,14 +147,12 @@ export const roleRoutes = {
       path: '/supervisor/period-report',
       label: 'Report 2 Jam',
       icon: FaClock,
-      hidden: true,
       element: (appState) => <PeriodReportPage appState={appState} />,
     },
     {
       path: '/supervisor/shift-report',
       label: 'Report Shift',
       icon: FaClock,
-      hidden: true,
       element: (appState) => <ShiftReportPage appState={appState} />,
     },
     {

@@ -13,7 +13,7 @@ import {
 } from '../services/dischargeService.js'
 import { uploadBarcodeReceiptPhoto } from '../services/storageService.js'
 import { getActiveVesselsForReports } from '../services/reportService.js'
-import { getHatchCargoByVesselIds } from '../services/vesselService.js'
+import { getHatchCargoByVesselIds, getVesselDestinations } from '../services/vesselService.js'
 import { validateBarcodePhotoFile } from '../utils/barcodePhoto.js'
 import { formatDate, formatMT } from '../utils/formatters.js'
 import {
@@ -35,6 +35,7 @@ import {
 
 const emptyForm = {
   hatchCargoId: '',
+  destinationId: '',
   plateNumber: '',
   tonnage: '',
   deliveryOrderNumber: '',
@@ -53,11 +54,55 @@ function getEmptyForm(overrides = {}) {
   }
 }
 
+function getFallbackVesselDestinations(vessel) {
+  const destinations = vessel?.destinations || []
+
+  if (destinations.length > 0) return destinations
+  if (!vessel?.destinationId) return []
+
+  return [
+    {
+      destinationId: vessel.destinationId,
+      name: vessel.destination || '-',
+      isActive: true,
+    },
+  ]
+}
+
+function getActiveDestinationOptions(destinations) {
+  return (destinations || []).filter((destination) => destination.isActive)
+}
+
+function getDestinationOptionsForEntry(destinations, entry) {
+  const options = getActiveDestinationOptions(destinations)
+  const entryDestinationId = entry?.destinationId
+
+  if (
+    entryDestinationId &&
+    !options.some((destination) => destination.destinationId === entryDestinationId)
+  ) {
+    options.push({
+      destinationId: entryDestinationId,
+      name: entry.destination || '-',
+      isActive: false,
+    })
+  }
+
+  return options
+}
+
+function getDefaultDestinationId(destinations) {
+  const activeDestinations = getActiveDestinationOptions(destinations)
+
+  return activeDestinations.length === 1 ? activeDestinations[0].destinationId : ''
+}
+
 function InputMonitoringPage({ appState }) {
   const { currentUser, setDischargeEntries } = appState
   const [vessels, setVessels] = useState([])
   const [selectedVesselId, setSelectedVesselId] = useState('')
   const [hatches, setHatches] = useState([])
+  const [vesselDestinations, setVesselDestinations] = useState([])
   const [entries, setEntries] = useState([])
   const [editingEntry, setEditingEntry] = useState(null)
   const [form, setForm] = useState(() => getEmptyForm())
@@ -79,6 +124,7 @@ function InputMonitoringPage({ appState }) {
     [selectedVesselId, vessels],
   )
   const totalPages = Math.max(1, Math.ceil(totalEntries / PAGE_SIZE))
+  const destinationOptions = getDestinationOptionsForEntry(vesselDestinations, editingEntry)
   const pageStart = totalEntries === 0 ? 0 : (currentPage - 1) * PAGE_SIZE + 1
   const pageEnd = Math.min(currentPage * PAGE_SIZE, totalEntries)
 
@@ -114,6 +160,7 @@ function InputMonitoringPage({ appState }) {
     if (!selectedVessel?.id) {
       setEntries([])
       setHatches([])
+      setVesselDestinations([])
       setTotalEntries(0)
       return
     }
@@ -122,12 +169,13 @@ function InputMonitoringPage({ appState }) {
     setLoadError('')
     setMessage('')
 
-    const [entriesResult, hatchResult] = await Promise.all([
+    const [entriesResult, hatchResult, destinationsResult] = await Promise.all([
       getDischargeEntriesForVessel(selectedVessel.id, {
         page: currentPage,
         pageSize: PAGE_SIZE,
       }),
       getHatchCargoByVesselIds([selectedVessel.id]),
+      getVesselDestinations(selectedVessel.id),
     ])
 
     if (entriesResult.error) {
@@ -147,6 +195,17 @@ function InputMonitoringPage({ appState }) {
           hatchNo: row.hatch_no,
           hatchLabel: row.hatch_label || `H${row.hatch_no}`,
         })),
+      )
+    }
+
+    if (destinationsResult.error) {
+      setLoadError((current) => `${current} Gagal memuat destination vessel.`.trim())
+      setVesselDestinations(getFallbackVesselDestinations(selectedVessel))
+    } else {
+      setVesselDestinations(
+        destinationsResult.data.length > 0
+          ? destinationsResult.data
+          : getFallbackVesselDestinations(selectedVessel),
       )
     }
 
@@ -219,6 +278,9 @@ function InputMonitoringPage({ appState }) {
     const tonnage = parseTonnageInputToNumber(form.tonnage)
 
     if (!form.hatchCargoId) nextErrors.hatchCargoId = 'Hatch wajib dipilih.'
+    if (destinationOptions.length > 0 && !form.destinationId) {
+      nextErrors.destinationId = 'Destination wajib dipilih.'
+    }
     if (!form.plateNumber.trim()) nextErrors.plateNumber = 'Plate number wajib diisi.'
     if (!form.tonnage) nextErrors.tonnage = 'Tonnage wajib diisi.'
     else if (tonnage <= 0) nextErrors.tonnage = 'Tonnage wajib lebih dari 0.'
@@ -242,6 +304,7 @@ function InputMonitoringPage({ appState }) {
     setEditingEntry(entry)
     setForm({
       hatchCargoId: entry.hatchCargoId,
+      destinationId: entry.destinationId || getDefaultDestinationId(vesselDestinations),
       plateNumber: entry.plateNumber,
       tonnage: formatTonnageInputFromNumber(entry.tonnage),
       deliveryOrderNumber: parseDeliveryOrderDigits(entry.deliveryOrderNumber),
@@ -291,6 +354,7 @@ function InputMonitoringPage({ appState }) {
 
     const payload = {
       vessel_id: selectedVessel.id,
+      destination_id: form.destinationId || null,
       hatch_cargo_id: form.hatchCargoId,
       checker_id: editingEntry.checkerId,
       plate_number: form.plateNumber.trim().toUpperCase(),
@@ -339,6 +403,7 @@ function InputMonitoringPage({ appState }) {
     { key: 'checkerName', label: 'Checker' },
     { key: 'plateNumber', label: 'Plate No.' },
     { key: 'hatch', label: 'Hatch' },
+    { key: 'destination', label: 'Destination' },
     { key: 'tonnage', label: 'Tonnage', render: (row) => formatMT(row.tonnage) },
     { key: 'deliveryOrderNumber', label: 'No Surat Jalan' },
     { key: 'scaleTicketNumber', label: 'No SJ Timbangan' },
@@ -443,6 +508,25 @@ function InputMonitoringPage({ appState }) {
                 />
                 {errors.tonnage && (
                   <p className="mt-1 text-sm font-semibold text-red-600">{errors.tonnage}</p>
+                )}
+              </div>
+
+              <div>
+                <Select
+                  label="Destination"
+                  value={form.destinationId}
+                  onChange={(event) => updateForm('destinationId', event.target.value)}
+                >
+                  <option value="">Pilih Destination</option>
+                  {destinationOptions.map((destination) => (
+                    <option key={destination.destinationId} value={destination.destinationId}>
+                      {destination.name}
+                      {destination.isActive ? '' : ' (Inactive)'}
+                    </option>
+                  ))}
+                </Select>
+                {errors.destinationId && (
+                  <p className="mt-1 text-sm font-semibold text-red-600">{errors.destinationId}</p>
                 )}
               </div>
 

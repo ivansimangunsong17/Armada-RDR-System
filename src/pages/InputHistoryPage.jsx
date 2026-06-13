@@ -35,6 +35,7 @@ import {
 const emptyForm = {
   vesselId: '',
   hatchCargoId: '',
+  destinationId: '',
   plateNumber: '',
   tonnage: '',
   deliveryOrderNumber: '',
@@ -55,6 +56,49 @@ function getEmptyForm(overrides = {}) {
 
 function getCheckerId(currentUser) {
   return currentUser?.authUserId || currentUser?.id
+}
+
+function getVesselDestinations(vessel) {
+  const destinations = vessel?.destinations || []
+
+  if (destinations.length > 0) return destinations
+  if (!vessel?.destinationId) return []
+
+  return [
+    {
+      destinationId: vessel.destinationId,
+      name: vessel.destination || '-',
+      isActive: true,
+    },
+  ]
+}
+
+function getActiveDestinationOptions(vessel) {
+  return getVesselDestinations(vessel).filter((destination) => destination.isActive)
+}
+
+function getDestinationOptionsForEntry(vessel, entry) {
+  const options = getActiveDestinationOptions(vessel)
+  const entryDestinationId = entry?.destinationId
+
+  if (
+    entryDestinationId &&
+    !options.some((destination) => destination.destinationId === entryDestinationId)
+  ) {
+    options.push({
+      destinationId: entryDestinationId,
+      name: entry.destination || '-',
+      isActive: false,
+    })
+  }
+
+  return options
+}
+
+function getDefaultDestinationId(vessel) {
+  const activeDestinations = getActiveDestinationOptions(vessel)
+
+  return activeDestinations.length === 1 ? activeDestinations[0].destinationId : ''
 }
 
 function InputHistoryPage({ appState }) {
@@ -85,6 +129,7 @@ function InputHistoryPage({ appState }) {
     [assignedVessels, selectedVesselId],
   )
   const hatches = selectedVessel?.hatchCargoRows || []
+  const destinationOptions = getDestinationOptionsForEntry(selectedVessel, editingEntry)
   const visibleEntries = entries.filter((entry) => entry.vesselId === selectedVessel?.id)
   const totalPages = Math.max(1, Math.ceil(totalEntries / PAGE_SIZE))
   const pageStart = totalEntries === 0 ? 0 : (currentPage - 1) * PAGE_SIZE + 1
@@ -213,6 +258,9 @@ function InputHistoryPage({ appState }) {
     const tonnage = parseTonnageInputToNumber(form.tonnage)
 
     if (!form.hatchCargoId) nextErrors.hatchCargoId = 'Hatch wajib dipilih.'
+    if (destinationOptions.length > 0 && !form.destinationId) {
+      nextErrors.destinationId = 'Destination wajib dipilih.'
+    }
     if (!form.plateNumber.trim()) nextErrors.plateNumber = 'Plat kendaraan wajib diisi.'
     if (!form.tonnage) nextErrors.tonnage = 'Tonnage wajib diisi.'
     else if (tonnage <= 0) nextErrors.tonnage = 'Tonnage wajib lebih dari 0.'
@@ -238,6 +286,9 @@ function InputHistoryPage({ appState }) {
     setForm({
       vesselId: entry.vesselId,
       hatchCargoId: entry.hatchCargoId,
+      destinationId: entry.destinationId || getDefaultDestinationId(
+        assignedVessels.find((vessel) => vessel.id === entry.vesselId) || selectedVessel,
+      ),
       plateNumber: entry.plateNumber,
       tonnage: formatTonnageInputFromNumber(entry.tonnage),
       deliveryOrderNumber: parseDeliveryOrderDigits(entry.deliveryOrderNumber),
@@ -290,6 +341,7 @@ function InputHistoryPage({ appState }) {
 
     const payload = {
       vessel_id: form.vesselId,
+      destination_id: form.destinationId || null,
       hatch_cargo_id: form.hatchCargoId,
       checker_id: checkerId,
       plate_number: form.plateNumber.trim().toUpperCase(),
@@ -458,6 +510,24 @@ function InputHistoryPage({ appState }) {
                 />
                 {errors.tonnage && (
                   <p className="mt-1 text-sm font-semibold text-red-600">{errors.tonnage}</p>
+                )}
+              </div>
+              <div>
+                <Select
+                  label="Destination"
+                  value={form.destinationId}
+                  onChange={(event) => updateForm('destinationId', event.target.value)}
+                >
+                  <option value="">Pilih Destination</option>
+                  {destinationOptions.map((destination) => (
+                    <option key={destination.destinationId} value={destination.destinationId}>
+                      {destination.name}
+                      {destination.isActive ? '' : ' (Inactive)'}
+                    </option>
+                  ))}
+                </Select>
+                {errors.destinationId && (
+                  <p className="mt-1 text-sm font-semibold text-red-600">{errors.destinationId}</p>
                 )}
               </div>
               <div>

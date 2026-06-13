@@ -35,11 +35,23 @@ $$;
 create table if not exists public.profiles (
   id uuid primary key references auth.users(id) on delete cascade,
   full_name text not null,
+  email text,
+  username text,
   role text not null check (role in ('admin', 'checker', 'supervisor')),
   is_active boolean not null default true,
   created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
+  updated_at timestamptz not null default now(),
+  constraint profiles_username_format_check
+    check (username is null or username ~ '^[a-z0-9][a-z0-9._-]{2,31}$')
 );
+
+create unique index if not exists profiles_email_unique_idx
+on public.profiles (email)
+where email is not null;
+
+create unique index if not exists profiles_username_unique_idx
+on public.profiles (username)
+where username is not null;
 
 create table if not exists public.destinations (
   id uuid primary key default gen_random_uuid(),
@@ -64,6 +76,19 @@ create table if not exists public.vessels (
   created_by uuid references public.profiles(id),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
+);
+
+create table if not exists public.vessel_destinations (
+  id uuid primary key default gen_random_uuid(),
+  vessel_id uuid not null references public.vessels(id) on delete cascade,
+  destination_id uuid not null references public.destinations(id),
+  is_active boolean not null default true,
+  created_by uuid references public.profiles(id),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz,
+  deactivated_at timestamptz,
+  constraint vessel_destinations_vessel_destination_unique
+    unique (vessel_id, destination_id)
 );
 
 create table if not exists public.hatch_cargo (
@@ -92,15 +117,22 @@ create unique index if not exists checker_assignments_one_active_checker_per_ves
 on public.checker_assignments (vessel_id)
 where is_active = true;
 
+comment on index public.checker_assignments_one_active_checker_per_vessel is
+  'Foundation decision: one checker can handle many vessels, but one vessel has only one active checker for now.';
+
 create table if not exists public.discharge_entries (
   id uuid primary key default gen_random_uuid(),
   vessel_id uuid not null references public.vessels(id),
   hatch_cargo_id uuid not null references public.hatch_cargo(id),
+  destination_id uuid references public.destinations(id),
   checker_id uuid not null references public.profiles(id),
   plate_number text not null,
   tonnage numeric(14, 3) not null check (tonnage > 0),
   delivery_order_number text not null,
   scale_ticket_number text not null,
+  gate_in_at timestamptz,
+  gate_in_date date,
+  gate_in_time time,
   gate_out_at timestamptz not null default now(),
   gate_out_date date,
   gate_out_time time,
@@ -117,6 +149,15 @@ create table if not exists public.discharge_entries (
 create index if not exists hatch_cargo_vessel_id_idx
 on public.hatch_cargo (vessel_id);
 
+create index if not exists vessel_destinations_vessel_id_idx
+on public.vessel_destinations (vessel_id);
+
+create index if not exists vessel_destinations_destination_id_idx
+on public.vessel_destinations (destination_id);
+
+create index if not exists vessel_destinations_active_idx
+on public.vessel_destinations (vessel_id, is_active);
+
 create index if not exists checker_assignments_checker_id_idx
 on public.checker_assignments (checker_id);
 
@@ -125,6 +166,9 @@ on public.discharge_entries (vessel_id);
 
 create index if not exists discharge_entries_checker_id_idx
 on public.discharge_entries (checker_id);
+
+create index if not exists discharge_entries_destination_id_idx
+on public.discharge_entries (destination_id);
 
 create index if not exists discharge_entries_gate_out_at_idx
 on public.discharge_entries (gate_out_at);
@@ -142,6 +186,11 @@ for each row execute function public.set_updated_at();
 drop trigger if exists vessels_set_updated_at on public.vessels;
 create trigger vessels_set_updated_at
 before update on public.vessels
+for each row execute function public.set_updated_at();
+
+drop trigger if exists vessel_destinations_set_updated_at on public.vessel_destinations;
+create trigger vessel_destinations_set_updated_at
+before update on public.vessel_destinations
 for each row execute function public.set_updated_at();
 
 drop trigger if exists hatch_cargo_set_updated_at on public.hatch_cargo;

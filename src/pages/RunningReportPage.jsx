@@ -5,10 +5,13 @@ import Button from '../components/ui/Button.jsx'
 import Card from '../components/ui/Card.jsx'
 import Select from '../components/ui/Select.jsx'
 import {
+  buildDestinationSummaryTotal,
   buildSummary,
+  getRunningDestinationSummary,
   getReportDataset,
 } from '../services/reportService.js'
 import { exportRunningReportExcel } from '../services/excelExportService.js'
+import { exportRunningReportPDF } from '../services/pdfExportService.js'
 import { formatDate, formatPercentage, formatTruck } from '../utils/formatters.js'
 
 function formatManagementNumber(value) {
@@ -35,16 +38,27 @@ function formatTruckRequirement(value) {
   return value ? formatTruck(value) : '-'
 }
 
-function getAverageProgressVessel(rows) {
-  if (!rows.length) {
-    return 0
-  }
-
-  const totalProgress = rows.reduce((total, row) => {
-    return total + (Number(row.progressPercentage) || 0)
-  }, 0)
-
-  return totalProgress / rows.length
+function ReportSkeleton() {
+  return (
+    <div className="grid gap-4">
+      <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="mx-auto h-4 w-36 animate-pulse rounded bg-slate-200" />
+        <div className="mx-auto mt-3 h-7 w-64 animate-pulse rounded bg-slate-200" />
+        <div className="mx-auto mt-3 h-4 w-48 animate-pulse rounded bg-slate-100" />
+        <div className="mt-6 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {Array.from({ length: 6 }).map((_, index) => (
+            <div key={index} className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+              <div className="h-3 w-24 animate-pulse rounded bg-slate-200" />
+              <div className="mt-3 h-6 w-32 animate-pulse rounded bg-slate-200" />
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="h-64 animate-pulse rounded bg-slate-100" />
+      </div>
+    </div>
+  )
 }
 
 function getHatchLagStatus(gap) {
@@ -75,14 +89,25 @@ function RunningReportPage({ appState }) {
   const isChecker = currentUser?.role === 'checker'
   const [availableVessels, setAvailableVessels] = useState([])
   const [runningRows, setRunningRows] = useState([])
+  const [destinationSummary, setDestinationSummary] = useState([])
   const [selectedVesselId, setSelectedVesselId] = useState('')
   const [isLoading, setIsLoading] = useState(true)
+  const [isDestinationSummaryLoading, setIsDestinationSummaryLoading] = useState(false)
   const [error, setError] = useState('')
   const selectedVesselStorageKey = getSelectedVesselStorageKey(currentUser)
 
   useEffect(() => {
     loadReport()
   }, [currentUser?.id])
+
+  useEffect(() => {
+    let isCurrentRequest = true
+    loadDestinationSummary(selectedVesselId, () => isCurrentRequest)
+
+    return () => {
+      isCurrentRequest = false
+    }
+  }, [selectedVesselId])
 
   useEffect(() => {
     if (availableVessels.length === 0) {
@@ -129,6 +154,30 @@ function RunningReportPage({ appState }) {
     setIsLoading(false)
   }
 
+  async function loadDestinationSummary(vesselId, isCurrentRequest = () => true) {
+    if (!vesselId) {
+      setDestinationSummary([])
+      setIsDestinationSummaryLoading(false)
+      return
+    }
+
+    setDestinationSummary([])
+    setIsDestinationSummaryLoading(true)
+
+    const result = await getRunningDestinationSummary(vesselId)
+
+    if (!isCurrentRequest()) return
+
+    if (result.error) {
+      setError((current) => `${current} Gagal memuat destination summary.`.trim())
+      setDestinationSummary([])
+    } else {
+      setDestinationSummary(result.data)
+    }
+
+    setIsDestinationSummaryLoading(false)
+  }
+
   const selectedVessel = useMemo(() => {
     const fallback = availableVessels[0]
     return availableVessels.find((vessel) => String(vessel.id) === selectedVesselId) || fallback
@@ -136,19 +185,19 @@ function RunningReportPage({ appState }) {
 
   const runningReport = runningRows.filter((row) => row.vesselId === selectedVessel?.id)
   const summaryReport = buildSummary(runningReport)
-  const averageProgressVessel = getAverageProgressVessel(runningReport)
+  const destinationSummaryTotal = buildDestinationSummaryTotal(destinationSummary)
 
   const averageLoad = summaryReport.averageLoadPerTruck
   const estimatedTruckRequirementTotal = getEstimatedTruckRequirement(
     summaryReport.totalRemaining,
     averageLoad,
   )
+  const hasReportData = runningReport.length > 0
   const summaryCards = [
     { label: 'Total Cargo', value: formatManagementNumber(summaryReport.totalCargo) },
     { label: 'Total Discharge', value: formatManagementNumber(summaryReport.totalDischarge) },
     { label: 'Remaining Cargo', value: formatManagementNumber(summaryReport.totalRemaining) },
     { label: 'Progress %', value: formatPercentage(summaryReport.overallProgress) },
-    { label: 'Average Progress Vessel', value: formatPercentage(averageProgressVessel) },
     { label: 'Total Truck', value: formatTruck(summaryReport.totalTruck) },
     { label: 'Average Load', value: formatManagementNumber(averageLoad) },
   ]
@@ -157,12 +206,22 @@ function RunningReportPage({ appState }) {
     window.print()
   }
 
-  function handleExportExcel() {
-    exportRunningReportExcel({
+  async function handleExportExcel() {
+    await exportRunningReportExcel({
       vessel: selectedVessel,
       rows: runningReport,
       summary: summaryReport,
       averageLoadOverall: averageLoad,
+      destinationSummary,
+    })
+  }
+
+  async function handleExportPDF() {
+    await exportRunningReportPDF({
+      vessel: selectedVessel,
+      summary: summaryReport,
+      hatchRows: runningReport,
+      destinationSummary,
     })
   }
 
@@ -180,25 +239,40 @@ function RunningReportPage({ appState }) {
         : []
 
   return (
-    <div className="grid gap-6">
-      <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
-        <div>
-          <h2 className="text-2xl font-bold text-slate-900">Report</h2>
+    <div className="grid gap-5">
+      <div className="flex flex-col gap-4 rounded-lg border border-slate-200 bg-white p-4 shadow-sm shadow-slate-200/70 lg:flex-row lg:items-center lg:justify-between print:hidden">
+        <div className="min-w-0">
+          <p className="text-xs font-extrabold uppercase tracking-wide text-red-800">
+            Running Report
+          </p>
+          <h2 className="mt-1 truncate text-2xl font-black text-slate-950">
+            {selectedVessel?.vesselName || 'Running Discharge Result'}
+          </h2>
           <p className="mt-1 text-sm text-slate-500">
-            Running Discharge Result dari view running_report Supabase.
+            Management view untuk progress discharge vessel.
           </p>
         </div>
 
-        <div className="flex flex-wrap gap-3 print:hidden">
+        <div className="flex flex-wrap gap-2 lg:justify-end">
           <Button
             type="button"
             variant="success"
             onClick={handleExportExcel}
-            disabled={!selectedVessel || runningReport.length === 0}
+            disabled={!selectedVessel || !hasReportData}
+            className="min-w-28"
           >
             Export Excel
           </Button>
-          <Button type="button" variant="secondary" onClick={handlePrint}>
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={handleExportPDF}
+            disabled={!selectedVessel || !hasReportData}
+            className="min-w-28"
+          >
+            Export PDF
+          </Button>
+          <Button type="button" variant="secondary" onClick={handlePrint} className="min-w-20">
             Print
           </Button>
           {secondaryReportLinks.map((link) => (
@@ -220,14 +294,19 @@ function RunningReportPage({ appState }) {
       )}
 
       {isLoading ? (
-        <Card>
-          <p className="text-sm text-slate-500">Memuat running report dari Supabase...</p>
-        </Card>
+        <ReportSkeleton />
       ) : (
         <>
           {!isChecker && (
-            <Card title="Filter Kapal">
-              <div className="max-w-md">
+            <Card className="print:hidden">
+              <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+                <div>
+                  <h3 className="text-base font-extrabold text-slate-950">Filter Kapal</h3>
+                  <p className="mt-1 text-sm text-slate-500">
+                    Pilih vessel untuk melihat running report terbaru.
+                  </p>
+                </div>
+                <div className="w-full md:max-w-sm">
                 <Select
                   label="Pilih Kapal"
                   value={String(selectedVessel?.id || '')}
@@ -239,47 +318,104 @@ function RunningReportPage({ appState }) {
                     </option>
                   ))}
                 </Select>
+                </div>
               </div>
             </Card>
           )}
 
-          <Card>
-            <div className="mb-5 text-center">
-              <p className="text-lg font-extrabold uppercase text-slate-950">
-                {selectedVessel?.company || '-'}
-              </p>
-              <p className="mt-1 text-lg font-extrabold uppercase text-slate-950">
-                {selectedVessel?.vesselName || '-'}
-              </p>
-              <p className="mt-2 text-xl font-black uppercase tracking-wide text-red-800">
-                RUNNING DISCHARGE RESULT
-              </p>
-              <p className="mt-1 text-sm text-slate-500">Printed preview: {formatDate(new Date())}</p>
+          {!selectedVessel ? (
+            <Card>
+              <div className="py-10 text-center">
+                <h3 className="text-lg font-extrabold text-slate-950">Belum ada vessel tersedia</h3>
+                <p className="mt-2 text-sm text-slate-500">
+                  Running report akan tampil setelah vessel dan cargo information tersedia.
+                </p>
+              </div>
+            </Card>
+          ) : !hasReportData ? (
+            <Card>
+              <div className="py-10 text-center">
+                <p className="text-xs font-extrabold uppercase tracking-wide text-red-800">
+                  {selectedVessel.vesselName || 'Selected Vessel'}
+                </p>
+                <h3 className="mt-2 text-lg font-extrabold text-slate-950">
+                  Belum ada data running discharge
+                </h3>
+                <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-slate-500">
+                  Data akan muncul setelah FSP dan transaksi discharge vessel ini tersedia.
+                </p>
+              </div>
+            </Card>
+          ) : (
+            <>
+          <Card className="p-0">
+            <div className="border-b border-slate-200 px-5 py-5">
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                <div className="min-w-0">
+                  <p className="text-xs font-extrabold uppercase tracking-wide text-slate-500">
+                    Running Discharge Result
+                  </p>
+                  <h1 className="mt-2 truncate text-2xl font-black uppercase text-slate-950 md:text-3xl">
+                    {selectedVessel?.vesselName || '-'}
+                  </h1>
+                  <div className="mt-3 flex flex-wrap items-center gap-2 text-sm text-slate-600">
+                    <span className="rounded-full bg-slate-100 px-3 py-1 font-bold text-slate-700">
+                      Company: {selectedVessel?.company || '-'}
+                    </span>
+                    <span className="rounded-full bg-slate-100 px-3 py-1 font-bold text-slate-700">
+                      Printed preview: {formatDate(new Date())}
+                    </span>
+                  </div>
+                </div>
+                <div className="rounded-lg border border-red-100 bg-red-50 px-4 py-3 text-left lg:text-right">
+                  <p className="text-xs font-extrabold uppercase tracking-wide text-red-700">
+                    Overall Progress
+                  </p>
+                  <p className="mt-1 text-2xl font-black text-red-900">
+                    {formatPercentage(summaryReport.overallProgress)}
+                  </p>
+                </div>
+              </div>
             </div>
 
-            <section className="mb-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            <section className="grid gap-3 p-5 md:grid-cols-2 xl:grid-cols-3">
               {summaryCards.map((item) => (
-                <div key={item.label} className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-                  <p className="text-xs font-bold uppercase text-slate-500">{item.label}</p>
-                  <p className="mt-2 text-xl font-extrabold text-slate-950">{item.value}</p>
+                <div
+                  key={item.label}
+                  className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3"
+                >
+                  <p className="text-[11px] font-extrabold uppercase tracking-wide text-slate-500">
+                    {item.label}
+                  </p>
+                  <p className="mt-2 text-xl font-black text-slate-950">{item.value}</p>
                 </div>
               ))}
             </section>
 
-            <div className="overflow-x-auto rounded-lg border border-slate-200">
-              <table className="min-w-full border-collapse text-sm">
-                <thead className="bg-slate-100 text-slate-700">
+            <div className="mx-5 mb-5 overflow-x-auto rounded-lg border border-slate-200">
+              <table className="w-full min-w-[820px] table-fixed border-collapse text-sm">
+                <colgroup>
+                  <col className="w-[7%]" />
+                  <col className="w-[13%]" />
+                  <col className="w-[12%]" />
+                  <col className="w-[13%]" />
+                  <col className="w-[12%]" />
+                  <col className="w-[12%]" />
+                  <col className="w-[11%]" />
+                  <col className="w-[20%]" />
+                </colgroup>
+                <thead className="sticky top-0 bg-slate-100 text-slate-700">
                   <tr>
-                    <th className="border border-slate-200 px-4 py-3 text-left font-extrabold">Hatch</th>
-                    <th className="border border-slate-200 px-4 py-3 text-right font-extrabold">Initial Cargo</th>
-                    <th className="border border-slate-200 px-4 py-3 text-right font-extrabold">Discharge</th>
-                    <th className="border border-slate-200 px-4 py-3 text-right font-extrabold">Remaining</th>
-                    <th className="border border-slate-200 px-4 py-3 text-right font-extrabold">Progress %</th>
-                    <th className="border border-slate-200 px-4 py-3 text-left font-extrabold">Status</th>
-                    <th className="border border-slate-200 px-4 py-3 text-right font-extrabold">Total Truck</th>
-                    <th className="border border-slate-200 px-4 py-3 text-right font-extrabold">
-                      Est. Truck Requirement
+                    <th className="border border-slate-200 px-3 py-2.5 text-left font-extrabold">Hatch</th>
+                    <th className="border border-slate-200 px-3 py-2.5 text-right font-extrabold">Initial Cargo</th>
+                    <th className="border border-slate-200 px-3 py-2.5 text-right font-extrabold">Discharge</th>
+                    <th className="border border-slate-200 px-3 py-2.5 text-right font-extrabold">Remaining</th>
+                    <th className="border border-slate-200 px-3 py-2.5 text-right font-extrabold">
+                      Est. Truck
                     </th>
+                    <th className="border border-slate-200 px-3 py-2.5 text-right font-extrabold">Progress %</th>
+                    <th className="border border-slate-200 px-3 py-2.5 text-left font-extrabold">Status</th>
+                    <th className="border border-slate-200 px-3 py-2.5 text-right font-extrabold">Total Truck</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -288,15 +424,15 @@ function RunningReportPage({ appState }) {
                       row.remainingOnBoard,
                       averageLoad,
                     )
-                    const progressGap = (Number(row.progressPercentage) || 0) - averageProgressVessel
+                    const progressGap = (Number(row.progressPercentage) || 0) - summaryReport.overallProgress
                     const hatchLagStatus = getHatchLagStatus(progressGap)
 
                     return (
                       <tr key={row.hatch} className="hover:bg-red-50/40">
-                        <td className="border border-slate-200 px-4 py-3 font-bold text-slate-900">{row.hatch}</td>
-                        <td className="border border-slate-200 px-4 py-3 text-right">{formatManagementNumber(row.finalStowage)}</td>
-                        <td className="border border-slate-200 px-4 py-3 text-right">{formatManagementNumber(row.totalDischarge)}</td>
-                        <td className="border border-slate-200 px-4 py-3 text-right font-bold text-slate-900">
+                        <td className="border border-slate-200 px-3 py-2.5 font-bold text-slate-900">{row.hatch}</td>
+                        <td className="border border-slate-200 px-3 py-2.5 text-right">{formatManagementNumber(row.finalStowage)}</td>
+                        <td className="border border-slate-200 px-3 py-2.5 text-right">{formatManagementNumber(row.totalDischarge)}</td>
+                        <td className="border border-slate-200 px-3 py-2.5 text-right font-bold text-slate-900">
                           {formatManagementNumber(row.remainingOnBoard)}
                           {Number(row.remainingOnBoard) < 0 && (
                             <div className="mt-1">
@@ -304,30 +440,30 @@ function RunningReportPage({ appState }) {
                             </div>
                           )}
                         </td>
-                        <td className="border border-slate-200 px-4 py-3 text-right">
+                        <td className="border border-slate-200 bg-slate-50 px-3 py-2.5 text-right font-black text-slate-950">
+                          {formatTruckRequirement(estimatedTruckRequirement)}
+                        </td>
+                        <td className="border border-slate-200 px-3 py-2.5 text-right">
                           {formatPercentage(row.progressPercentage)}
                         </td>
-                        <td className="border border-slate-200 px-4 py-3">
+                        <td className="border border-slate-200 px-3 py-2.5">
                           <Badge variant={hatchLagStatus.variant}>{hatchLagStatus.label}</Badge>
                         </td>
-                        <td className="border border-slate-200 px-4 py-3 text-right">
+                        <td className="border border-slate-200 px-3 py-2.5 text-right">
                           {formatTruck(row.totalTruck)}
-                        </td>
-                        <td className="border border-slate-200 px-4 py-3 text-right font-bold text-slate-900">
-                          {formatTruckRequirement(estimatedTruckRequirement)}
                         </td>
                       </tr>
                     )
                   })}
                   <tr className="bg-slate-100 font-extrabold text-slate-950">
-                    <td className="border border-slate-200 px-4 py-3">TOTAL</td>
-                    <td className="border border-slate-200 px-4 py-3 text-right">
+                    <td className="border border-slate-300 px-3 py-3">TOTAL</td>
+                    <td className="border border-slate-300 px-3 py-3 text-right">
                       {formatManagementNumber(summaryReport.totalCargo)}
                     </td>
-                    <td className="border border-slate-200 px-4 py-3 text-right">
+                    <td className="border border-slate-300 px-3 py-3 text-right">
                       {formatManagementNumber(summaryReport.totalDischarge)}
                     </td>
-                    <td className="border border-slate-200 px-4 py-3 text-right">
+                    <td className="border border-slate-300 px-3 py-3 text-right">
                       {formatManagementNumber(summaryReport.totalRemaining)}
                       {Number(summaryReport.totalRemaining) < 0 && (
                         <div className="mt-1">
@@ -335,15 +471,15 @@ function RunningReportPage({ appState }) {
                         </div>
                       )}
                     </td>
-                    <td className="border border-slate-200 px-4 py-3 text-right">
+                    <td className="border border-slate-300 bg-slate-200 px-3 py-3 text-right">
+                      {formatTruckRequirement(estimatedTruckRequirementTotal)}
+                    </td>
+                    <td className="border border-slate-300 px-3 py-3 text-right">
                       {formatPercentage(summaryReport.overallProgress)}
                     </td>
-                    <td className="border border-slate-200 px-4 py-3">-</td>
-                    <td className="border border-slate-200 px-4 py-3 text-right">
+                    <td className="border border-slate-300 px-3 py-3">-</td>
+                    <td className="border border-slate-300 px-3 py-3 text-right">
                       {formatTruck(summaryReport.totalTruck)}
-                    </td>
-                    <td className="border border-slate-200 px-4 py-3 text-right">
-                      {formatTruckRequirement(estimatedTruckRequirementTotal)}
                     </td>
                   </tr>
                 </tbody>
@@ -351,24 +487,27 @@ function RunningReportPage({ appState }) {
             </div>
           </Card>
 
-          <div className="grid gap-6 xl:grid-cols-2">
-            <Card title="Additional Calculation">
+          <div className="grid gap-5 xl:grid-cols-2">
+            <Card className="p-0">
+              <div className="border-b border-slate-100 px-5 py-4">
+                <h2 className="text-base font-extrabold text-slate-950">Additional Calculation</h2>
+              </div>
               <div className="overflow-x-auto rounded-lg border border-slate-200">
                 <table className="min-w-full border-collapse text-sm">
                   <tbody>
-                    <tr>
-                      <td className="border border-slate-200 px-4 py-3 font-bold text-slate-800">
+                    <tr className="hover:bg-slate-50">
+                      <td className="border border-slate-200 px-4 py-3 font-extrabold text-slate-800">
                         Average load / truck
                       </td>
-                      <td className="border border-slate-200 px-4 py-3 text-right font-bold">
+                      <td className="border border-slate-200 px-4 py-3 text-right font-black text-slate-950">
                         {formatManagementNumber(averageLoad)}
                       </td>
                     </tr>
-                    <tr>
-                      <td className="border border-slate-200 px-4 py-3 font-bold text-slate-800">
+                    <tr className="hover:bg-slate-50">
+                      <td className="border border-slate-200 px-4 py-3 font-extrabold text-slate-800">
                         Est. truck requirement
                       </td>
-                      <td className="border border-slate-200 px-4 py-3 text-right font-bold">
+                      <td className="border border-slate-200 px-4 py-3 text-right font-black text-slate-950">
                         {formatTruckRequirement(estimatedTruckRequirementTotal)}
                       </td>
                     </tr>
@@ -377,37 +516,77 @@ function RunningReportPage({ appState }) {
               </div>
             </Card>
 
-            <Card title="Destination Summary">
-              <div className="overflow-x-auto rounded-lg border border-slate-200">
+            <Card className="p-0">
+              <div className="border-b border-slate-100 px-5 py-4">
+                <h2 className="text-base font-extrabold text-slate-950">Destination Summary</h2>
+                <p className="mt-1 text-sm text-slate-500">
+                  Berdasarkan destination per truck.
+                </p>
+              </div>
+              <div className="overflow-x-auto">
                 <table className="min-w-full border-collapse text-sm">
                   <thead className="bg-slate-100">
                     <tr>
-                      <th className="border border-slate-200 px-4 py-3 text-left">Destination</th>
-                      <th className="border border-slate-200 px-4 py-3">Netto</th>
-                      <th className="border border-slate-200 px-4 py-3">DT</th>
-                      <th className="border border-slate-200 px-4 py-3">Average</th>
+                      <th className="border border-slate-200 px-4 py-3 text-left font-extrabold">Destination</th>
+                      <th className="border border-slate-200 px-4 py-3 text-right font-extrabold">Netto</th>
+                      <th className="border border-slate-200 px-4 py-3 text-right font-extrabold">DT</th>
+                      <th className="border border-slate-200 px-4 py-3 text-right font-extrabold">Average</th>
                     </tr>
                   </thead>
                   <tbody>
-                    <tr>
-                      <td className="border border-slate-200 px-4 py-3 font-bold">
-                        {selectedVessel?.destination || '-'}
-                      </td>
-                      <td className="border border-slate-200 px-4 py-3 text-center">
-                        {formatManagementNumber(summaryReport.totalDischarge)}
-                      </td>
-                      <td className="border border-slate-200 px-4 py-3 text-center">
-                        {formatTruck(summaryReport.totalTruck)}
-                      </td>
-                      <td className="border border-slate-200 px-4 py-3 text-center">
-                        {formatManagementNumber(averageLoad)}
-                      </td>
-                    </tr>
+                    {isDestinationSummaryLoading ? (
+                      <tr>
+                        <td className="border border-slate-200 px-4 py-4 text-center font-semibold text-slate-500" colSpan="4">
+                          Memuat destination summary...
+                        </td>
+                      </tr>
+                    ) : destinationSummary.length === 0 ? (
+                      <tr>
+                        <td className="border border-slate-200 px-4 py-4 text-center font-semibold text-slate-500" colSpan="4">
+                          Belum ada data discharge.
+                        </td>
+                      </tr>
+                    ) : (
+                      <>
+                        {destinationSummary.map((row) => (
+                          <tr key={row.destinationId} className="hover:bg-slate-50">
+                            <td className="border border-slate-200 px-4 py-3 font-bold">
+                              {row.destination || '-'}
+                            </td>
+                            <td className="border border-slate-200 px-4 py-3 text-right">
+                              {formatManagementNumber(row.totalDischarge)}
+                            </td>
+                            <td className="border border-slate-200 px-4 py-3 text-right">
+                              {formatTruck(row.totalDt)}
+                            </td>
+                            <td className="border border-slate-200 px-4 py-3 text-right">
+                              {formatManagementNumber(row.averageTonnage)}
+                            </td>
+                          </tr>
+                        ))}
+                        <tr className="bg-slate-100 font-black text-slate-950">
+                          <td className="border border-slate-200 px-4 py-3">
+                            {destinationSummaryTotal.destination}
+                          </td>
+                          <td className="border border-slate-200 px-4 py-3 text-right">
+                            {formatManagementNumber(destinationSummaryTotal.totalDischarge)}
+                          </td>
+                          <td className="border border-slate-200 px-4 py-3 text-right">
+                            {formatTruck(destinationSummaryTotal.totalDt)}
+                          </td>
+                          <td className="border border-slate-200 px-4 py-3 text-right">
+                            {formatManagementNumber(destinationSummaryTotal.averageTonnage)}
+                          </td>
+                        </tr>
+                      </>
+                    )}
                   </tbody>
                 </table>
               </div>
             </Card>
           </div>
+            </>
+          )}
         </>
       )}
     </div>

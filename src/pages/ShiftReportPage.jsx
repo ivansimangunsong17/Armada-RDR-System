@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
 import Card from '../components/ui/Card.jsx'
 import Input from '../components/ui/Input.jsx'
 import Select from '../components/ui/Select.jsx'
@@ -17,6 +18,51 @@ const shiftOptions = [
   { value: 'shift_2', label: 'Shift 2 (16.00 - 00.00)' },
   { value: 'shift_3', label: 'Shift 3 (00.00 - 08.00)' },
 ]
+
+const supervisorReportLinks = [
+  { to: '/supervisor/running-report', label: 'Running Report' },
+  { to: '/supervisor/shift-report', label: 'Report Shift' },
+  { to: '/supervisor/period-report', label: 'Report 2 Jam' },
+]
+
+function ReportNav() {
+  return (
+    <div className="flex flex-wrap gap-2">
+      {supervisorReportLinks.map((link) => (
+        <Link
+          key={link.to}
+          className={[
+            'inline-flex min-h-10 items-center justify-center rounded-md border px-4 py-2 text-sm font-bold shadow-sm transition-colors',
+            link.to.includes('shift-report')
+              ? 'border-red-800 bg-red-800 text-white'
+              : 'border-slate-300 bg-white text-slate-800 hover:bg-slate-100',
+          ].join(' ')}
+          to={link.to}
+        >
+          {link.label}
+        </Link>
+      ))}
+    </div>
+  )
+}
+
+function ReportLoadingState({ message }) {
+  return (
+    <div className="grid gap-4">
+      <div className="grid gap-3 md:grid-cols-3">
+        {Array.from({ length: 3 }).map((_, index) => (
+          <div key={index} className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+            <div className="h-3 w-24 animate-pulse rounded bg-slate-200" />
+            <div className="mt-3 h-6 w-32 animate-pulse rounded bg-slate-200" />
+          </div>
+        ))}
+      </div>
+      <div className="rounded-lg border border-slate-200 bg-slate-50 p-5 text-sm font-semibold text-slate-500">
+        {message}
+      </div>
+    </div>
+  )
+}
 
 function ShiftReportPage({ appState }) {
   const { currentUser } = appState
@@ -88,13 +134,17 @@ function ShiftReportPage({ appState }) {
     {
       key: 'totalDischarge',
       label: 'Total Discharge',
-      render: (row) => formatMT(row.totalDischarge),
+      render: (row) => <span className="block text-right">{formatMT(row.totalDischarge)}</span>,
     },
-    { key: 'totalTruck', label: 'Total DT', render: (row) => formatTruck(row.totalTruck) },
+    {
+      key: 'totalTruck',
+      label: 'Total DT',
+      render: (row) => <span className="block text-right">{formatTruck(row.totalTruck)}</span>,
+    },
     {
       key: 'averageTonnage',
       label: 'Average Tonnage',
-      render: (row) => formatMT(row.averageTonnage),
+      render: (row) => <span className="block text-right">{formatMT(row.averageTonnage)}</span>,
     },
   ]
 
@@ -109,12 +159,18 @@ function ShiftReportPage({ appState }) {
   }
 
   return (
-    <div className="grid gap-6">
-      <div>
-        <h2 className="text-2xl font-bold text-slate-900">Report per Shift</h2>
-        <p className="mt-1 text-sm text-slate-500">
-          Rekap discharge per shift berdasarkan view shift_report Supabase.
-        </p>
+    <div className="grid gap-5">
+      <div className="flex flex-col gap-4 rounded-lg border border-slate-200 bg-white p-4 shadow-sm shadow-slate-200/70 xl:flex-row xl:items-center xl:justify-between">
+        <div className="min-w-0">
+          <p className="text-xs font-extrabold uppercase tracking-wide text-red-800">
+            Supervisor Report
+          </p>
+          <h2 className="mt-1 text-2xl font-black text-slate-950">Report per Shift</h2>
+          <p className="mt-1 text-sm text-slate-500">
+            Rekap discharge per shift berdasarkan Gate Out.
+          </p>
+        </div>
+        <ReportNav />
       </div>
 
       {error && (
@@ -123,82 +179,128 @@ function ShiftReportPage({ appState }) {
         </div>
       )}
 
-      <Card title="Filter Report">
+      <Card>
         {isLoadingVessels ? (
-          <p className="text-sm text-slate-500">Memuat kapal...</p>
+          <ReportLoadingState message="Memuat daftar kapal..." />
         ) : (
-          <div className="grid gap-4 md:grid-cols-3">
-            <Select
-              label="Kapal"
-              value={selectedVessel?.id || ''}
-              onChange={(event) => setSelectedVesselId(event.target.value)}
-            >
-              {vessels.map((vessel) => (
-                <option key={vessel.id} value={vessel.id}>
-                  {vessel.vesselName}
-                </option>
-              ))}
-            </Select>
+          <>
+            <div className="mb-4 border-b border-slate-100 pb-4">
+              <h3 className="text-base font-extrabold text-slate-950">Filter Report</h3>
+              <p className="mt-1 text-sm text-slate-500">
+                Pilih kapal, tanggal, dan shift untuk melihat detail discharge.
+              </p>
+            </div>
+            <div className="grid gap-4 md:grid-cols-3">
+              <Select
+                label="Kapal"
+                value={selectedVessel?.id || ''}
+                onChange={(event) => setSelectedVesselId(event.target.value)}
+              >
+                {vessels.map((vessel) => (
+                  <option key={vessel.id} value={vessel.id}>
+                    {vessel.vesselName}
+                  </option>
+                ))}
+              </Select>
 
-            <Input
-              label="Tanggal"
-              type="date"
-              value={reportDate}
-              onChange={(event) => setReportDate(event.target.value)}
-            />
+              <Input
+                label="Tanggal"
+                type="date"
+                value={reportDate}
+                onChange={(event) => setReportDate(event.target.value)}
+              />
 
-            <Select
-              label="Shift"
-              value={shiftName}
-              onChange={(event) => setShiftName(event.target.value)}
-            >
-              <option value="">Pilih shift</option>
-              {shiftOptions.map((shift) => (
-                <option key={shift.value} value={shift.value}>
-                  {shift.label}
-                </option>
-              ))}
-            </Select>
-          </div>
+              <Select
+                label="Shift"
+                value={shiftName}
+                onChange={(event) => setShiftName(event.target.value)}
+              >
+                <option value="">Pilih shift</option>
+                {shiftOptions.map((shift) => (
+                  <option key={shift.value} value={shift.value}>
+                    {shift.label}
+                  </option>
+                ))}
+              </Select>
+            </div>
+          </>
         )}
       </Card>
 
-      {isFilterComplete && (
-        <Card
-          title={`${selectedVessel?.vesselName || '-'} - ${selectedShift?.label || '-'}`}
-          subtitle="Data ditampilkan per hatch."
-        >
+      {!isFilterComplete ? (
+        <Card>
+          <div className="py-8 text-center">
+            <h3 className="text-lg font-extrabold text-slate-950">Lengkapi filter report</h3>
+            <p className="mt-2 text-sm text-slate-500">
+              Report shift akan tampil setelah kapal, tanggal, dan shift dipilih.
+            </p>
+          </div>
+        </Card>
+      ) : (
+        <Card className="p-0">
+          <div className="flex flex-col gap-3 border-b border-slate-200 px-5 py-5 md:flex-row md:items-start md:justify-between">
+            <div className="min-w-0">
+              <p className="text-xs font-extrabold uppercase tracking-wide text-slate-500">
+                Shift Report
+              </p>
+              <h3 className="mt-1 truncate text-xl font-black text-slate-950">
+                {selectedVessel?.vesselName || '-'}
+              </h3>
+              <p className="mt-1 text-sm font-semibold text-slate-500">
+                {selectedShift?.label || '-'} · {reportDate || '-'}
+              </p>
+            </div>
+            <Button
+              type="button"
+              variant="success"
+              onClick={handleExportExcel}
+              disabled={rows.length === 0}
+            >
+              Export Excel
+            </Button>
+          </div>
+
+          <div className="p-5">
           {isLoadingReport ? (
-            <p className="text-sm text-slate-500">Memuat report shift...</p>
+            <ReportLoadingState message="Memuat report shift..." />
           ) : (
             <>
-              <div className="mb-4 flex justify-end">
-                <Button
-                  type="button"
-                  variant="success"
-                  onClick={handleExportExcel}
-                  disabled={rows.length === 0}
-                >
-                  Export Excel
-                </Button>
-              </div>
-              <Table columns={columns} data={rows} emptyMessage="Data shift belum tersedia." />
-              <div className="mt-4 grid gap-3 rounded-lg bg-slate-100 p-4 text-sm md:grid-cols-3">
-                <p>
-                  <span className="font-bold text-slate-900">Total Discharge:</span>{' '}
-                  {formatMT(summary.totalDischarge)}
-                </p>
-                <p>
-                  <span className="font-bold text-slate-900">Total DT:</span>{' '}
-                  {formatTruck(summary.totalTruck)}
-                </p>
-                <p>
-                  <span className="font-bold text-slate-900">Average:</span>{' '}
-                  {formatMT(summary.averageTonnage)}
-                </p>
-              </div>
+              <section className="mb-5 grid gap-3 md:grid-cols-3">
+                <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+                  <p className="text-[11px] font-extrabold uppercase tracking-wide text-slate-500">
+                    Total Discharge
+                  </p>
+                  <p className="mt-2 text-xl font-black text-slate-950">
+                    {formatMT(summary.totalDischarge)}
+                  </p>
+                </div>
+                <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+                  <p className="text-[11px] font-extrabold uppercase tracking-wide text-slate-500">
+                    Total DT
+                  </p>
+                  <p className="mt-2 text-xl font-black text-slate-950">
+                    {formatTruck(summary.totalTruck)}
+                  </p>
+                </div>
+                <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+                  <p className="text-[11px] font-extrabold uppercase tracking-wide text-slate-500">
+                    Average Load
+                  </p>
+                  <p className="mt-2 text-xl font-black text-slate-950">
+                    {formatMT(summary.averageTonnage)}
+                  </p>
+                </div>
+              </section>
+
+              <Table
+                columns={columns}
+                data={rows}
+                emptyMessage="Data shift belum tersedia."
+                tableClassName="min-w-[720px]"
+              />
             </>
           )}
+          </div>
         </Card>
       )}
     </div>

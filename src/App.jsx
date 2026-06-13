@@ -9,7 +9,7 @@ import {
   getCurrentSession,
   getProfileByUserId,
   mapProfileToCurrentUser,
-  signInWithEmailPassword,
+  signInWithLoginIdentifier,
   signOutSupabase,
 } from './services/authService.js'
 import {
@@ -64,12 +64,12 @@ function App() {
     return nextUser
   }
 
-  async function handleLogin(email, password) {
+  async function handleLogin(identifier, password) {
     setIsLoginLoading(true)
     setAuthError('')
 
     try {
-      const { user, error } = await signInWithEmailPassword(email, password)
+      const { user, error } = await signInWithLoginIdentifier(identifier, password)
 
       if (error) {
         throw error

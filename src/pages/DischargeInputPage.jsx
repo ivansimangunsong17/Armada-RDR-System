@@ -39,6 +39,7 @@ import {
 const emptyForm = {
   vesselId: '',
   hatchCargoId: '',
+  destinationId: '',
   plateNumber: '',
   tonnage: '',
   deliveryOrderNumber: '',
@@ -57,6 +58,49 @@ function getEmptyForm(overrides = {}) {
 
 function getCheckerId(currentUser) {
   return currentUser?.authUserId || currentUser?.id
+}
+
+function getVesselDestinations(vessel) {
+  const destinations = vessel?.destinations || []
+
+  if (destinations.length > 0) return destinations
+  if (!vessel?.destinationId) return []
+
+  return [
+    {
+      destinationId: vessel.destinationId,
+      name: vessel.destination || '-',
+      isActive: true,
+    },
+  ]
+}
+
+function getActiveDestinationOptions(vessel) {
+  return getVesselDestinations(vessel).filter((destination) => destination.isActive)
+}
+
+function getDestinationOptionsForEntry(vessel, entry) {
+  const options = getActiveDestinationOptions(vessel)
+  const entryDestinationId = entry?.destinationId
+
+  if (
+    entryDestinationId &&
+    !options.some((destination) => destination.destinationId === entryDestinationId)
+  ) {
+    options.push({
+      destinationId: entryDestinationId,
+      name: entry.destination || '-',
+      isActive: false,
+    })
+  }
+
+  return options
+}
+
+function getDefaultDestinationId(vessel) {
+  const activeDestinations = getActiveDestinationOptions(vessel)
+
+  return activeDestinations.length === 1 ? activeDestinations[0].destinationId : ''
 }
 
 function getOverDischargeWarning({ entries, excludeEntryId, hatchCargoId, initialCargo, tonnage }) {
@@ -117,10 +161,12 @@ function DischargeInputPage({ appState }) {
   )
 
   const hatches = selectedVessel?.hatchCargoRows || []
+  const activeDestinationOptions = getActiveDestinationOptions(selectedVessel)
   const selectedVesselEntries = entries.filter((entry) => entry.vesselId === selectedVessel?.id)
   const editVessel =
     assignedVessels.find((vessel) => vessel.id === editForm.vesselId) || selectedVessel
   const editHatches = editVessel?.hatchCargoRows || []
+  const editDestinationOptions = getDestinationOptionsForEntry(editVessel, editingEntry)
   const selectedHatch = hatches.find((hatch) => hatch.id === form.hatchCargoId)
   const selectedEditHatch = editHatches.find((hatch) => hatch.id === editForm.hatchCargoId)
   const overDischargeWarning = getOverDischargeWarning({
@@ -144,6 +190,22 @@ function DischargeInputPage({ appState }) {
   useEffect(() => {
     loadVesselNumberingEntries()
   }, [selectedVessel?.id])
+
+  useEffect(() => {
+    if (!selectedVessel?.id) return
+
+    const defaultDestinationId = getDefaultDestinationId(selectedVessel)
+    setForm((current) => {
+      if (current.vesselId !== selectedVessel.id) return current
+      if (current.destinationId === defaultDestinationId) return current
+      if (current.destinationId && activeDestinationOptions.length !== 1) return current
+
+      return {
+        ...current,
+        destinationId: defaultDestinationId,
+      }
+    })
+  }, [selectedVessel?.id, activeDestinationOptions.length])
 
   async function loadData() {
     if (!checkerId) {
@@ -208,10 +270,13 @@ function DischargeInputPage({ appState }) {
   function updateForm(field, value) {
     setForm((current) => {
       if (field === 'vesselId') {
+        const nextVessel = assignedVessels.find((vessel) => vessel.id === value)
+
         return {
           ...current,
           vesselId: value,
           hatchCargoId: '',
+          destinationId: getDefaultDestinationId(nextVessel),
           deliveryOrderNumber: '',
           scaleTicketNumber: '',
         }
@@ -332,6 +397,9 @@ function DischargeInputPage({ appState }) {
 
     if (!form.vesselId) nextErrors.vesselId = 'Kapal assignment wajib ada.'
     if (!form.hatchCargoId) nextErrors.hatchCargoId = 'Hatch wajib dipilih.'
+    if (activeDestinationOptions.length > 0 && !form.destinationId) {
+      nextErrors.destinationId = 'Destination wajib dipilih.'
+    }
     if (!form.plateNumber.trim()) nextErrors.plateNumber = 'Plat kendaraan wajib diisi.'
     if (!form.tonnage) nextErrors.tonnage = 'Tonnage wajib diisi.'
     else if (tonnage <= 0) nextErrors.tonnage = 'Tonnage wajib lebih dari 0.'
@@ -356,6 +424,9 @@ function DischargeInputPage({ appState }) {
     const tonnage = parseTonnageInputToNumber(editForm.tonnage)
 
     if (!editForm.hatchCargoId) nextErrors.hatchCargoId = 'Hatch wajib dipilih.'
+    if (editDestinationOptions.length > 0 && !editForm.destinationId) {
+      nextErrors.destinationId = 'Destination wajib dipilih.'
+    }
     if (!editForm.plateNumber.trim()) nextErrors.plateNumber = 'Plat kendaraan wajib diisi.'
     if (!editForm.tonnage) nextErrors.tonnage = 'Tonnage wajib diisi.'
     else if (tonnage <= 0) nextErrors.tonnage = 'Tonnage wajib lebih dari 0.'
@@ -405,6 +476,7 @@ function DischargeInputPage({ appState }) {
 
     const payload = {
       vessel_id: form.vesselId,
+      destination_id: form.destinationId || null,
       hatch_cargo_id: form.hatchCargoId,
       checker_id: checkerId,
       plate_number: form.plateNumber.trim().toUpperCase(),
@@ -434,6 +506,7 @@ function DischargeInputPage({ appState }) {
     setDischargeEntries((current) => [result.data, ...current])
     setForm(getEmptyForm({
       vesselId: form.vesselId,
+      destinationId: getDefaultDestinationId(selectedVessel),
       deliveryOrderNumber: getNextDeliveryOrderDigits(nextVesselNumberingEntries, form.vesselId),
       scaleTicketNumber: getNextScaleTicketNumber(nextVesselNumberingEntries, form.vesselId),
     }))
@@ -448,6 +521,9 @@ function DischargeInputPage({ appState }) {
     setEditForm({
       vesselId: entry.vesselId,
       hatchCargoId: entry.hatchCargoId,
+      destinationId: entry.destinationId || getDefaultDestinationId(
+        assignedVessels.find((vessel) => vessel.id === entry.vesselId) || selectedVessel,
+      ),
       plateNumber: entry.plateNumber,
       tonnage: formatTonnageInputFromNumber(entry.tonnage),
       deliveryOrderNumber: parseDeliveryOrderDigits(entry.deliveryOrderNumber),
@@ -500,6 +576,7 @@ function DischargeInputPage({ appState }) {
 
     const payload = {
       vessel_id: editForm.vesselId,
+      destination_id: editForm.destinationId || null,
       hatch_cargo_id: editForm.hatchCargoId,
       checker_id: checkerId,
       plate_number: editForm.plateNumber.trim().toUpperCase(),
@@ -547,6 +624,7 @@ function DischargeInputPage({ appState }) {
   const recentColumns = [
     { key: 'plateNumber', label: 'Plat' },
     { key: 'hatch', label: 'Hatch' },
+    { key: 'destination', label: 'Destination' },
     { key: 'tonnage', label: 'Tonnage', render: (row) => formatMT(row.tonnage) },
     { key: 'deliveryOrderNumber', label: 'No Surat Jalan' },
     { key: 'scaleTicketNumber', label: 'No SJ Timbangan' },
@@ -618,7 +696,11 @@ function DischargeInputPage({ appState }) {
             </div>
             <div>
               <p className="text-xs font-bold uppercase text-slate-500">Destination</p>
-              <p className="mt-1 font-bold text-slate-900">{selectedVessel?.destination || '-'}</p>
+              <p className="mt-1 font-bold text-slate-900">
+                {activeDestinationOptions.map((destination) => destination.name).join(', ') ||
+                  selectedVessel?.destination ||
+                  '-'}
+              </p>
             </div>
             <div>
               <p className="text-xs font-bold uppercase text-slate-500">Total Hatch</p>
@@ -691,6 +773,29 @@ function DischargeInputPage({ appState }) {
                     {formatMT(overDischargeWarning.initialCargo)}. Data tetap bisa disimpan karena
                     selisih lapangan mungkin terjadi.
                   </div>
+                )}
+              </div>
+
+              <div>
+                <Select
+                  label="Destination"
+                  value={form.destinationId}
+                  onChange={(event) => updateForm('destinationId', event.target.value)}
+                  disabled={assignedVessels.length === 0 || activeDestinationOptions.length <= 1}
+                >
+                  <option value="">
+                    {activeDestinationOptions.length === 1 ? 'Auto selected' : 'Pilih Destination'}
+                  </option>
+                  {activeDestinationOptions.map((destination) => (
+                    <option key={destination.destinationId} value={destination.destinationId}>
+                      {destination.name}
+                    </option>
+                  ))}
+                </Select>
+                {errors.destinationId && (
+                  <p className="mt-1 text-sm font-semibold text-red-600">
+                    {errors.destinationId}
+                  </p>
                 )}
               </div>
 
@@ -963,6 +1068,27 @@ function DischargeInputPage({ appState }) {
                       cargo {formatMT(editOverDischargeWarning.initialCargo)}. Data tetap bisa
                       disimpan karena selisih lapangan mungkin terjadi.
                     </div>
+                  )}
+                </div>
+
+                <div>
+                  <Select
+                    label="Destination"
+                    value={editForm.destinationId}
+                    onChange={(event) => updateEditForm('destinationId', event.target.value)}
+                  >
+                    <option value="">Pilih Destination</option>
+                    {editDestinationOptions.map((destination) => (
+                      <option key={destination.destinationId} value={destination.destinationId}>
+                        {destination.name}
+                        {destination.isActive ? '' : ' (Inactive)'}
+                      </option>
+                    ))}
+                  </Select>
+                  {editErrors.destinationId && (
+                    <p className="mt-1 text-sm font-semibold text-red-600">
+                      {editErrors.destinationId}
+                    </p>
                   )}
                 </div>
 

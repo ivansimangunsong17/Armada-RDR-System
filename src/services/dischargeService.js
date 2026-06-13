@@ -13,13 +13,15 @@ function getClientError(message) {
 function mapDischargeEntry(row) {
   const hatchCargo = row.hatch_cargo || {}
   const vessel = row.vessels || {}
-  const destination = vessel.destinations || {}
+  const vesselDestination = vessel.destinations || {}
+  const entryDestination = row.entry_destination || {}
   const checker = row.profiles || {}
 
   return {
     id: row.id,
     vesselId: row.vessel_id,
     hatchCargoId: row.hatch_cargo_id,
+    destinationId: row.destination_id || vessel.destination_id || '',
     checkerId: row.checker_id,
     checkerName: checker.full_name || '-',
     plateNumber: row.plate_number,
@@ -29,7 +31,7 @@ function mapDischargeEntry(row) {
     totalNetto: Number(row.tonnage) || 0,
     deliveryOrderNumber: row.delivery_order_number,
     scaleTicketNumber: row.scale_ticket_number,
-    destination: destination.name || '-',
+    destination: entryDestination.name || vesselDestination.name || '-',
     company: vessel.cargo_owner || '-',
     vesselName: vessel.vessel_name || '-',
     cargo: vessel.cargo_type || '-',
@@ -49,6 +51,7 @@ function mapDischargeEntry(row) {
 function mapAssignedVessel(row) {
   const vessel = row.vessels || {}
   const destination = vessel.destinations || {}
+  const vesselDestinations = vessel.vessel_destinations || []
   const hatchCargoRows = vessel.hatch_cargo || []
 
   return {
@@ -59,6 +62,12 @@ function mapAssignedVessel(row) {
     cargo: vessel.cargo_type,
     destinationId: vessel.destination_id,
     destination: destination.name || '-',
+    destinations: vesselDestinations.map((row) => ({
+      vesselDestinationId: row.id,
+      destinationId: row.destination_id,
+      name: row.destinations?.name || '-',
+      isActive: row.is_active !== false,
+    })),
     totalHatch: vessel.total_hatch,
     eta: vessel.eta,
     startDate: vessel.start_discharge_date,
@@ -103,6 +112,15 @@ export async function getAssignedVesselsForChecker(checkerId) {
             id,
             name
           ),
+          vessel_destinations (
+            id,
+            destination_id,
+            is_active,
+            destinations (
+              id,
+              name
+            )
+          ),
           hatch_cargo (
             id,
             vessel_id,
@@ -128,6 +146,7 @@ const dischargeEntrySelect = `
   id,
   vessel_id,
   hatch_cargo_id,
+  destination_id,
   checker_id,
   plate_number,
   tonnage,
@@ -147,6 +166,10 @@ const dischargeEntrySelect = `
     id,
     hatch_no,
     hatch_label
+  ),
+  entry_destination:destinations!discharge_entries_destination_id_fkey (
+    id,
+    name
   ),
   vessels (
     id,
@@ -216,6 +239,7 @@ export async function createDischargeEntry(payload) {
         id,
         vessel_id,
         hatch_cargo_id,
+        destination_id,
         checker_id,
         plate_number,
         tonnage,
@@ -235,6 +259,10 @@ export async function createDischargeEntry(payload) {
           id,
           hatch_no,
           hatch_label
+        ),
+        entry_destination:destinations!discharge_entries_destination_id_fkey (
+          id,
+          name
         ),
         vessels (
           id,
@@ -278,6 +306,7 @@ export async function updateDischargeEntry(entryId, payload) {
         id,
         vessel_id,
         hatch_cargo_id,
+        destination_id,
         checker_id,
         plate_number,
         tonnage,
@@ -297,6 +326,10 @@ export async function updateDischargeEntry(entryId, payload) {
           id,
           hatch_no,
           hatch_label
+        ),
+        entry_destination:destinations!discharge_entries_destination_id_fkey (
+          id,
+          name
         ),
         vessels (
           id,
