@@ -253,13 +253,13 @@ function RunningReportPage({ appState }) {
           </p>
         </div>
 
-        <div className="flex flex-wrap gap-2 lg:justify-end">
+        <div className="grid w-full grid-cols-1 gap-2 sm:grid-cols-2 lg:flex lg:w-auto lg:justify-end">
           <Button
             type="button"
             variant="success"
             onClick={handleExportExcel}
             disabled={!selectedVessel || !hasReportData}
-            className="min-w-28"
+            className="w-full lg:w-auto lg:min-w-28"
           >
             Export Excel
           </Button>
@@ -268,17 +268,17 @@ function RunningReportPage({ appState }) {
             variant="secondary"
             onClick={handleExportPDF}
             disabled={!selectedVessel || !hasReportData}
-            className="min-w-28"
+            className="w-full lg:w-auto lg:min-w-28"
           >
             Export PDF
           </Button>
-          <Button type="button" variant="secondary" onClick={handlePrint} className="min-w-20">
+          <Button type="button" variant="secondary" onClick={handlePrint} className="w-full lg:w-auto lg:min-w-20">
             Print
           </Button>
           {secondaryReportLinks.map((link) => (
             <Link
               key={link.to}
-              className="inline-flex min-h-10 items-center justify-center rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-800 shadow-sm transition-colors hover:bg-slate-100 focus:outline-none focus:ring-4 focus:ring-slate-200"
+              className="inline-flex min-h-10 w-full items-center justify-center rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-800 shadow-sm transition-colors hover:bg-slate-100 focus:outline-none focus:ring-4 focus:ring-slate-200 lg:w-auto"
               to={link.to}
             >
               {link.label}
@@ -378,22 +378,90 @@ function RunningReportPage({ appState }) {
               </div>
             </div>
 
-            <section className="grid gap-3 p-5 md:grid-cols-2 xl:grid-cols-3">
+            <section className="grid grid-cols-1 gap-3 p-4 sm:grid-cols-2 sm:p-5 xl:grid-cols-3">
               {summaryCards.map((item) => (
                 <div
                   key={item.label}
-                  className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3"
+                  className="min-w-0 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3"
                 >
                   <p className="text-[11px] font-extrabold uppercase tracking-wide text-slate-500">
                     {item.label}
                   </p>
-                  <p className="mt-2 text-xl font-black text-slate-950">{item.value}</p>
+                  <p className="mt-2 break-words text-lg font-black text-slate-950 sm:text-xl">
+                    {item.value}
+                  </p>
                 </div>
               ))}
             </section>
 
-            <div className="mx-5 mb-5 overflow-x-auto rounded-lg border border-slate-200">
-              <table className="w-full min-w-[820px] table-fixed border-collapse text-sm">
+            <div className="mx-4 mb-5 grid gap-3 md:hidden">
+              {runningReport.map((row) => {
+                const estimatedTruckRequirement = getEstimatedTruckRequirement(
+                  row.remainingOnBoard,
+                  averageLoad,
+                )
+                const progressGap = (Number(row.progressPercentage) || 0) - summaryReport.overallProgress
+                const hatchLagStatus = getHatchLagStatus(progressGap)
+
+                return (
+                  <article
+                    key={row.hatch}
+                    className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <h3 className="text-lg font-black text-slate-950">{row.hatch}</h3>
+                      <Badge variant={hatchLagStatus.variant}>{hatchLagStatus.label}</Badge>
+                    </div>
+                    <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">
+                      <div>
+                        <dt className="font-bold uppercase text-slate-500">Discharge</dt>
+                        <dd className="mt-1 font-black text-slate-950">
+                          {formatManagementNumber(row.totalDischarge)}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt className="font-bold uppercase text-slate-500">Remaining</dt>
+                        <dd className="mt-1 font-black text-slate-950">
+                          {formatManagementNumber(row.remainingOnBoard)}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt className="font-bold uppercase text-slate-500">Progress</dt>
+                        <dd className="mt-1 font-black text-slate-950">
+                          {formatPercentage(row.progressPercentage)}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt className="font-bold uppercase text-slate-500">Truck</dt>
+                        <dd className="mt-1 font-black text-slate-950">
+                          {formatTruck(row.totalTruck)}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt className="font-bold uppercase text-slate-500">Est. Truck</dt>
+                        <dd className="mt-1 font-black text-slate-950">
+                          {formatTruckRequirement(estimatedTruckRequirement)}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt className="font-bold uppercase text-slate-500">Initial Cargo</dt>
+                        <dd className="mt-1 font-black text-slate-950">
+                          {formatManagementNumber(row.finalStowage)}
+                        </dd>
+                      </div>
+                    </dl>
+                    {Number(row.remainingOnBoard) < 0 && (
+                      <div className="mt-3">
+                        <Badge variant="danger">Over Discharge</Badge>
+                      </div>
+                    )}
+                  </article>
+                )
+              })}
+            </div>
+
+            <div className="mx-4 mb-5 hidden overflow-x-auto rounded-lg border border-slate-200 sm:mx-5 md:block">
+              <table className="w-full min-w-[980px] table-fixed border-collapse text-sm">
                 <colgroup>
                   <col className="w-[7%]" />
                   <col className="w-[13%]" />
@@ -406,16 +474,16 @@ function RunningReportPage({ appState }) {
                 </colgroup>
                 <thead className="sticky top-0 bg-slate-100 text-slate-700">
                   <tr>
-                    <th className="border border-slate-200 px-3 py-2.5 text-left font-extrabold">Hatch</th>
-                    <th className="border border-slate-200 px-3 py-2.5 text-right font-extrabold">Initial Cargo</th>
-                    <th className="border border-slate-200 px-3 py-2.5 text-right font-extrabold">Discharge</th>
-                    <th className="border border-slate-200 px-3 py-2.5 text-right font-extrabold">Remaining</th>
-                    <th className="border border-slate-200 px-3 py-2.5 text-right font-extrabold">
+                    <th className="whitespace-nowrap border border-slate-200 px-3 py-2.5 text-left font-extrabold">Hatch</th>
+                    <th className="whitespace-nowrap border border-slate-200 px-3 py-2.5 text-right font-extrabold">Initial Cargo</th>
+                    <th className="whitespace-nowrap border border-slate-200 px-3 py-2.5 text-right font-extrabold">Discharge</th>
+                    <th className="whitespace-nowrap border border-slate-200 px-3 py-2.5 text-right font-extrabold">Remaining</th>
+                    <th className="whitespace-nowrap border border-slate-200 px-3 py-2.5 text-right font-extrabold">
                       Est. Truck
                     </th>
-                    <th className="border border-slate-200 px-3 py-2.5 text-right font-extrabold">Progress %</th>
-                    <th className="border border-slate-200 px-3 py-2.5 text-left font-extrabold">Status</th>
-                    <th className="border border-slate-200 px-3 py-2.5 text-right font-extrabold">Total Truck</th>
+                    <th className="whitespace-nowrap border border-slate-200 px-3 py-2.5 text-right font-extrabold">Progress %</th>
+                    <th className="whitespace-nowrap border border-slate-200 px-3 py-2.5 text-left font-extrabold">Status</th>
+                    <th className="whitespace-nowrap border border-slate-200 px-3 py-2.5 text-right font-extrabold">Total Truck</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -429,10 +497,10 @@ function RunningReportPage({ appState }) {
 
                     return (
                       <tr key={row.hatch} className="hover:bg-red-50/40">
-                        <td className="border border-slate-200 px-3 py-2.5 font-bold text-slate-900">{row.hatch}</td>
-                        <td className="border border-slate-200 px-3 py-2.5 text-right">{formatManagementNumber(row.finalStowage)}</td>
-                        <td className="border border-slate-200 px-3 py-2.5 text-right">{formatManagementNumber(row.totalDischarge)}</td>
-                        <td className="border border-slate-200 px-3 py-2.5 text-right font-bold text-slate-900">
+                        <td className="whitespace-nowrap border border-slate-200 px-3 py-2.5 font-bold text-slate-900">{row.hatch}</td>
+                        <td className="whitespace-nowrap border border-slate-200 px-3 py-2.5 text-right">{formatManagementNumber(row.finalStowage)}</td>
+                        <td className="whitespace-nowrap border border-slate-200 px-3 py-2.5 text-right">{formatManagementNumber(row.totalDischarge)}</td>
+                        <td className="whitespace-nowrap border border-slate-200 px-3 py-2.5 text-right font-bold text-slate-900">
                           {formatManagementNumber(row.remainingOnBoard)}
                           {Number(row.remainingOnBoard) < 0 && (
                             <div className="mt-1">
@@ -440,30 +508,30 @@ function RunningReportPage({ appState }) {
                             </div>
                           )}
                         </td>
-                        <td className="border border-slate-200 bg-slate-50 px-3 py-2.5 text-right font-black text-slate-950">
+                        <td className="whitespace-nowrap border border-slate-200 bg-slate-50 px-3 py-2.5 text-right font-black text-slate-950">
                           {formatTruckRequirement(estimatedTruckRequirement)}
                         </td>
-                        <td className="border border-slate-200 px-3 py-2.5 text-right">
+                        <td className="whitespace-nowrap border border-slate-200 px-3 py-2.5 text-right">
                           {formatPercentage(row.progressPercentage)}
                         </td>
-                        <td className="border border-slate-200 px-3 py-2.5">
+                        <td className="whitespace-nowrap border border-slate-200 px-3 py-2.5">
                           <Badge variant={hatchLagStatus.variant}>{hatchLagStatus.label}</Badge>
                         </td>
-                        <td className="border border-slate-200 px-3 py-2.5 text-right">
+                        <td className="whitespace-nowrap border border-slate-200 px-3 py-2.5 text-right">
                           {formatTruck(row.totalTruck)}
                         </td>
                       </tr>
                     )
                   })}
                   <tr className="bg-slate-100 font-extrabold text-slate-950">
-                    <td className="border border-slate-300 px-3 py-3">TOTAL</td>
-                    <td className="border border-slate-300 px-3 py-3 text-right">
+                    <td className="whitespace-nowrap border border-slate-300 px-3 py-3">TOTAL</td>
+                    <td className="whitespace-nowrap border border-slate-300 px-3 py-3 text-right">
                       {formatManagementNumber(summaryReport.totalCargo)}
                     </td>
-                    <td className="border border-slate-300 px-3 py-3 text-right">
+                    <td className="whitespace-nowrap border border-slate-300 px-3 py-3 text-right">
                       {formatManagementNumber(summaryReport.totalDischarge)}
                     </td>
-                    <td className="border border-slate-300 px-3 py-3 text-right">
+                    <td className="whitespace-nowrap border border-slate-300 px-3 py-3 text-right">
                       {formatManagementNumber(summaryReport.totalRemaining)}
                       {Number(summaryReport.totalRemaining) < 0 && (
                         <div className="mt-1">
@@ -471,14 +539,14 @@ function RunningReportPage({ appState }) {
                         </div>
                       )}
                     </td>
-                    <td className="border border-slate-300 bg-slate-200 px-3 py-3 text-right">
+                    <td className="whitespace-nowrap border border-slate-300 bg-slate-200 px-3 py-3 text-right">
                       {formatTruckRequirement(estimatedTruckRequirementTotal)}
                     </td>
-                    <td className="border border-slate-300 px-3 py-3 text-right">
+                    <td className="whitespace-nowrap border border-slate-300 px-3 py-3 text-right">
                       {formatPercentage(summaryReport.overallProgress)}
                     </td>
-                    <td className="border border-slate-300 px-3 py-3">-</td>
-                    <td className="border border-slate-300 px-3 py-3 text-right">
+                    <td className="whitespace-nowrap border border-slate-300 px-3 py-3">-</td>
+                    <td className="whitespace-nowrap border border-slate-300 px-3 py-3 text-right">
                       {formatTruck(summaryReport.totalTruck)}
                     </td>
                   </tr>
@@ -487,27 +555,27 @@ function RunningReportPage({ appState }) {
             </div>
           </Card>
 
-          <div className="grid gap-5 xl:grid-cols-2">
+          <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
             <Card className="p-0">
               <div className="border-b border-slate-100 px-5 py-4">
                 <h2 className="text-base font-extrabold text-slate-950">Additional Calculation</h2>
               </div>
               <div className="overflow-x-auto rounded-lg border border-slate-200">
-                <table className="min-w-full border-collapse text-sm">
+                <table className="min-w-[520px] border-collapse text-sm">
                   <tbody>
                     <tr className="hover:bg-slate-50">
-                      <td className="border border-slate-200 px-4 py-3 font-extrabold text-slate-800">
+                      <td className="whitespace-nowrap border border-slate-200 px-4 py-3 font-extrabold text-slate-800">
                         Average load / truck
                       </td>
-                      <td className="border border-slate-200 px-4 py-3 text-right font-black text-slate-950">
+                      <td className="whitespace-nowrap border border-slate-200 px-4 py-3 text-right font-black text-slate-950">
                         {formatManagementNumber(averageLoad)}
                       </td>
                     </tr>
                     <tr className="hover:bg-slate-50">
-                      <td className="border border-slate-200 px-4 py-3 font-extrabold text-slate-800">
+                      <td className="whitespace-nowrap border border-slate-200 px-4 py-3 font-extrabold text-slate-800">
                         Est. truck requirement
                       </td>
-                      <td className="border border-slate-200 px-4 py-3 text-right font-black text-slate-950">
+                      <td className="whitespace-nowrap border border-slate-200 px-4 py-3 text-right font-black text-slate-950">
                         {formatTruckRequirement(estimatedTruckRequirementTotal)}
                       </td>
                     </tr>
@@ -523,14 +591,77 @@ function RunningReportPage({ appState }) {
                   Berdasarkan destination per truck.
                 </p>
               </div>
-              <div className="overflow-x-auto">
-                <table className="min-w-full border-collapse text-sm">
+              <div className="grid gap-3 p-4 md:hidden">
+                {isDestinationSummaryLoading ? (
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm font-semibold text-slate-500">
+                    Memuat destination summary...
+                  </div>
+                ) : destinationSummary.length === 0 ? (
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm font-semibold text-slate-500">
+                    Belum ada data discharge.
+                  </div>
+                ) : (
+                  <>
+                    {destinationSummary.map((row) => (
+                      <article key={row.destinationId} className="rounded-lg border border-slate-200 bg-white p-4">
+                        <h3 className="font-black text-slate-950">{row.destination || '-'}</h3>
+                        <dl className="mt-3 grid grid-cols-3 gap-3 text-sm">
+                          <div>
+                            <dt className="font-bold uppercase text-slate-500">Netto</dt>
+                            <dd className="mt-1 font-black text-slate-950">
+                              {formatManagementNumber(row.totalDischarge)}
+                            </dd>
+                          </div>
+                          <div>
+                            <dt className="font-bold uppercase text-slate-500">DT</dt>
+                            <dd className="mt-1 font-black text-slate-950">
+                              {formatTruck(row.totalDt)}
+                            </dd>
+                          </div>
+                          <div>
+                            <dt className="font-bold uppercase text-slate-500">Average</dt>
+                            <dd className="mt-1 font-black text-slate-950">
+                              {formatManagementNumber(row.averageTonnage)}
+                            </dd>
+                          </div>
+                        </dl>
+                      </article>
+                    ))}
+                    <article className="rounded-lg border border-slate-300 bg-slate-100 p-4">
+                      <h3 className="font-black text-slate-950">{destinationSummaryTotal.destination}</h3>
+                      <dl className="mt-3 grid grid-cols-3 gap-3 text-sm">
+                        <div>
+                          <dt className="font-bold uppercase text-slate-500">Netto</dt>
+                          <dd className="mt-1 font-black text-slate-950">
+                            {formatManagementNumber(destinationSummaryTotal.totalDischarge)}
+                          </dd>
+                        </div>
+                        <div>
+                          <dt className="font-bold uppercase text-slate-500">DT</dt>
+                          <dd className="mt-1 font-black text-slate-950">
+                            {formatTruck(destinationSummaryTotal.totalDt)}
+                          </dd>
+                        </div>
+                        <div>
+                          <dt className="font-bold uppercase text-slate-500">Average</dt>
+                          <dd className="mt-1 font-black text-slate-950">
+                            {formatManagementNumber(destinationSummaryTotal.averageTonnage)}
+                          </dd>
+                        </div>
+                      </dl>
+                    </article>
+                  </>
+                )}
+              </div>
+
+              <div className="hidden overflow-x-auto md:block">
+                <table className="min-w-[680px] border-collapse text-sm">
                   <thead className="bg-slate-100">
                     <tr>
-                      <th className="border border-slate-200 px-4 py-3 text-left font-extrabold">Destination</th>
-                      <th className="border border-slate-200 px-4 py-3 text-right font-extrabold">Netto</th>
-                      <th className="border border-slate-200 px-4 py-3 text-right font-extrabold">DT</th>
-                      <th className="border border-slate-200 px-4 py-3 text-right font-extrabold">Average</th>
+                      <th className="whitespace-nowrap border border-slate-200 px-4 py-3 text-left font-extrabold">Destination</th>
+                      <th className="whitespace-nowrap border border-slate-200 px-4 py-3 text-right font-extrabold">Netto</th>
+                      <th className="whitespace-nowrap border border-slate-200 px-4 py-3 text-right font-extrabold">DT</th>
+                      <th className="whitespace-nowrap border border-slate-200 px-4 py-3 text-right font-extrabold">Average</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -550,31 +681,31 @@ function RunningReportPage({ appState }) {
                       <>
                         {destinationSummary.map((row) => (
                           <tr key={row.destinationId} className="hover:bg-slate-50">
-                            <td className="border border-slate-200 px-4 py-3 font-bold">
+                            <td className="whitespace-nowrap border border-slate-200 px-4 py-3 font-bold">
                               {row.destination || '-'}
                             </td>
-                            <td className="border border-slate-200 px-4 py-3 text-right">
+                            <td className="whitespace-nowrap border border-slate-200 px-4 py-3 text-right">
                               {formatManagementNumber(row.totalDischarge)}
                             </td>
-                            <td className="border border-slate-200 px-4 py-3 text-right">
+                            <td className="whitespace-nowrap border border-slate-200 px-4 py-3 text-right">
                               {formatTruck(row.totalDt)}
                             </td>
-                            <td className="border border-slate-200 px-4 py-3 text-right">
+                            <td className="whitespace-nowrap border border-slate-200 px-4 py-3 text-right">
                               {formatManagementNumber(row.averageTonnage)}
                             </td>
                           </tr>
                         ))}
                         <tr className="bg-slate-100 font-black text-slate-950">
-                          <td className="border border-slate-200 px-4 py-3">
+                          <td className="whitespace-nowrap border border-slate-200 px-4 py-3">
                             {destinationSummaryTotal.destination}
                           </td>
-                          <td className="border border-slate-200 px-4 py-3 text-right">
+                          <td className="whitespace-nowrap border border-slate-200 px-4 py-3 text-right">
                             {formatManagementNumber(destinationSummaryTotal.totalDischarge)}
                           </td>
-                          <td className="border border-slate-200 px-4 py-3 text-right">
+                          <td className="whitespace-nowrap border border-slate-200 px-4 py-3 text-right">
                             {formatTruck(destinationSummaryTotal.totalDt)}
                           </td>
-                          <td className="border border-slate-200 px-4 py-3 text-right">
+                          <td className="whitespace-nowrap border border-slate-200 px-4 py-3 text-right">
                             {formatManagementNumber(destinationSummaryTotal.averageTonnage)}
                           </td>
                         </tr>

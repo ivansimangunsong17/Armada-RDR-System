@@ -143,9 +143,9 @@ function DashboardPage({ appState, dashboardTitle, dashboardDescription }) {
 
   return (
     <div className="grid gap-6">
-      <section className="grid gap-4 rounded-lg border border-slate-200 bg-white p-5 shadow-sm lg:grid-cols-[1fr_auto] lg:items-center">
-        <div>
-          <h2 className="text-2xl font-bold text-slate-900">
+      <section className="grid gap-4 rounded-lg border border-slate-200 bg-white p-4 shadow-sm sm:p-5 lg:grid-cols-[1fr_auto] lg:items-center">
+        <div className="min-w-0">
+          <h2 className="text-xl font-bold text-slate-900 sm:text-2xl">
             {dashboardTitle || (isChecker ? 'Progress Discharge Kapal' : 'Dashboard Multi Kapal')}
           </h2>
           <p className="mt-1 text-sm text-slate-500">
@@ -173,11 +173,13 @@ function DashboardPage({ appState, dashboardTitle, dashboardDescription }) {
         </Card>
       ) : (
         <>
-          <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
             {summaryCards.map((item) => (
-              <Card key={item.label}>
+              <Card key={item.label} className="min-w-0">
                 <p className="text-xs font-bold uppercase text-slate-500">{item.label}</p>
-                <strong className="mt-2 block text-2xl font-bold text-slate-900">{item.value}</strong>
+                <strong className="mt-2 block break-words text-xl font-bold text-slate-900 sm:text-2xl">
+                  {item.value}
+                </strong>
                 <p className="mt-1 text-sm text-slate-500">{item.note}</p>
               </Card>
             ))}
@@ -188,11 +190,65 @@ function DashboardPage({ appState, dashboardTitle, dashboardDescription }) {
           </Card>
 
           <Card title="Progress Semua Kapal" subtitle="Ringkasan progress tiap kapal dari Supabase.">
-            <Table columns={vesselColumns} data={vesselReports} />
+            <div className="grid gap-3 md:hidden">
+              {vesselReports.length === 0 ? (
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm font-semibold text-slate-500">
+                  Data kapal belum tersedia.
+                </div>
+              ) : (
+                vesselReports.map((row) => {
+                  const status = String(row.status || '').toLowerCase()
+
+                  return (
+                    <article key={row.id || row.vesselName} className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <h3 className="text-lg font-black text-slate-950">{row.vesselName}</h3>
+                          <p className="mt-1 text-sm font-semibold text-slate-500">
+                            {row.cargo || '-'} · {row.destination || '-'}
+                          </p>
+                        </div>
+                        <Badge variant={status === 'active' ? 'active' : 'pending'}>{row.status}</Badge>
+                      </div>
+                      <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">
+                        <div>
+                          <dt className="font-bold uppercase text-slate-500">Total Cargo</dt>
+                          <dd className="mt-1 font-black text-slate-950">{formatMT(row.totalCargo)}</dd>
+                        </div>
+                        <div>
+                          <dt className="font-bold uppercase text-slate-500">Discharge</dt>
+                          <dd className="mt-1 font-black text-slate-950">{formatMT(row.totalDischarge)}</dd>
+                        </div>
+                        <div>
+                          <dt className="font-bold uppercase text-slate-500">Remaining</dt>
+                          <dd className="mt-1 font-black text-slate-950">{formatMT(row.totalRemaining)}</dd>
+                        </div>
+                        <div>
+                          <dt className="font-bold uppercase text-slate-500">Progress</dt>
+                          <dd className="mt-1 font-black text-slate-950">{formatPercentage(row.overallProgress)}</dd>
+                        </div>
+                        <div>
+                          <dt className="font-bold uppercase text-slate-500">Truck</dt>
+                          <dd className="mt-1 font-black text-slate-950">{formatTruck(row.totalTruck)}</dd>
+                        </div>
+                      </dl>
+                      {Number(row.totalRemaining) < 0 && (
+                        <div className="mt-3">
+                          <Badge variant="danger">Over Discharge</Badge>
+                        </div>
+                      )}
+                    </article>
+                  )
+                })
+              )}
+            </div>
+            <div className="hidden md:block">
+              <Table columns={vesselColumns} data={vesselReports} />
+            </div>
           </Card>
 
           <Card title="Detail Kapal" subtitle="Pilih kapal untuk melihat progress per hatch.">
-            <div className="mb-5 max-w-md">
+            <div className="mb-5 w-full sm:max-w-md">
               <Select
                 label="Pilih Kapal"
                 value={String(selectedVessel?.id || '')}
@@ -206,14 +262,60 @@ function DashboardPage({ appState, dashboardTitle, dashboardDescription }) {
               </Select>
             </div>
 
-            <div className="mb-5 grid gap-3 rounded-lg bg-slate-100 p-4 text-sm text-slate-700 md:grid-cols-2 xl:grid-cols-4">
+            <div className="mb-5 grid grid-cols-1 gap-3 rounded-lg bg-slate-100 p-4 text-sm text-slate-700 sm:grid-cols-2 xl:grid-cols-4">
               <p><span className="font-bold text-slate-900">Company:</span> {selectedVessel?.company || '-'}</p>
               <p><span className="font-bold text-slate-900">Cargo:</span> {selectedVessel?.cargo || '-'}</p>
               <p><span className="font-bold text-slate-900">Destination:</span> {selectedVessel?.destination || '-'}</p>
               <p><span className="font-bold text-slate-900">Progress:</span> {formatPercentage(selectedSummary.overallProgress)}</p>
             </div>
 
-            <Table columns={hatchColumns} data={selectedRunningReport} />
+            <div className="grid gap-3 md:hidden">
+              {selectedRunningReport.length === 0 ? (
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm font-semibold text-slate-500">
+                  Data hatch belum tersedia.
+                </div>
+              ) : (
+                selectedRunningReport.map((row) => (
+                  <article key={row.hatch} className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+                    <h3 className="text-lg font-black text-slate-950">{row.hatch}</h3>
+                    <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">
+                      <div>
+                        <dt className="font-bold uppercase text-slate-500">Final Stowage</dt>
+                        <dd className="mt-1 font-black text-slate-950">{formatMT(row.finalStowage)}</dd>
+                      </div>
+                      <div>
+                        <dt className="font-bold uppercase text-slate-500">Discharge</dt>
+                        <dd className="mt-1 font-black text-slate-950">{formatMT(row.totalDischarge)}</dd>
+                      </div>
+                      <div>
+                        <dt className="font-bold uppercase text-slate-500">Remaining</dt>
+                        <dd className="mt-1 font-black text-slate-950">{formatMT(row.remainingOnBoard)}</dd>
+                      </div>
+                      <div>
+                        <dt className="font-bold uppercase text-slate-500">Progress</dt>
+                        <dd className="mt-1 font-black text-slate-950">{formatPercentage(row.progressPercentage)}</dd>
+                      </div>
+                      <div>
+                        <dt className="font-bold uppercase text-slate-500">Truck</dt>
+                        <dd className="mt-1 font-black text-slate-950">{formatTruck(row.totalTruck)}</dd>
+                      </div>
+                      <div>
+                        <dt className="font-bold uppercase text-slate-500">Average Load</dt>
+                        <dd className="mt-1 font-black text-slate-950">{formatMT(row.averageLoad)}</dd>
+                      </div>
+                    </dl>
+                    {Number(row.remainingOnBoard) < 0 && (
+                      <div className="mt-3">
+                        <Badge variant="danger">Over Discharge</Badge>
+                      </div>
+                    )}
+                  </article>
+                ))
+              )}
+            </div>
+            <div className="hidden md:block">
+              <Table columns={hatchColumns} data={selectedRunningReport} />
+            </div>
           </Card>
 
           <Card title="Update Terakhir" subtitle="Data discharge terakhir dari kapal yang dipilih.">

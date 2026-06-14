@@ -28,12 +28,6 @@ const periods = [
   { label: '22:00-24:00', startHour: 22, endHour: 24 },
 ]
 
-const supervisorReportLinks = [
-  { to: '/supervisor/running-report', label: 'Running Report' },
-  { to: '/supervisor/shift-report', label: 'Report Shift' },
-  { to: '/supervisor/period-report', label: 'Report 2 Jam' },
-]
-
 const emptyRunningPosition = {
   totalCargo: 0,
   totalDischarge: 0,
@@ -43,14 +37,26 @@ const emptyRunningPosition = {
   averageLoad: 0,
 }
 
-function ReportNav() {
+function getReportLinks(role) {
+  const basePath = role === 'admin' ? '/admin' : '/supervisor'
+
+  return [
+    { to: `${basePath}/running-report`, label: 'Running Report' },
+    { to: `${basePath}/shift-report`, label: 'Report Shift' },
+    { to: `${basePath}/period-report`, label: 'Report 2 Jam' },
+  ]
+}
+
+function ReportNav({ role }) {
+  const reportLinks = getReportLinks(role)
+
   return (
-    <div className="flex flex-wrap gap-2">
-      {supervisorReportLinks.map((link) => (
+    <div className="grid w-full grid-cols-1 gap-2 sm:grid-cols-3 xl:flex xl:w-auto xl:flex-wrap">
+      {reportLinks.map((link) => (
         <Link
           key={link.to}
           className={[
-            'inline-flex min-h-10 items-center justify-center rounded-md border px-4 py-2 text-sm font-bold shadow-sm transition-colors',
+            'inline-flex min-h-10 w-full items-center justify-center rounded-md border px-4 py-2 text-sm font-bold shadow-sm transition-colors xl:w-auto',
             link.to.includes('period-report')
               ? 'border-red-800 bg-red-800 text-white'
               : 'border-slate-300 bg-white text-slate-800 hover:bg-slate-100',
@@ -195,7 +201,7 @@ function PeriodReportPage({ appState }) {
             Rekap discharge per periode 2 jam berdasarkan Gate Out.
           </p>
         </div>
-        <ReportNav />
+        <ReportNav role={currentUser?.role} />
       </div>
 
       {error && (
@@ -215,7 +221,7 @@ function PeriodReportPage({ appState }) {
                 Pilih kapal, tanggal, dan periode 2 jam.
               </p>
             </div>
-            <div className="grid gap-4 md:grid-cols-3">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
               <Select
                 label="Kapal"
                 value={selectedVessel?.id || ''}
@@ -263,7 +269,7 @@ function PeriodReportPage({ appState }) {
         </Card>
       ) : (
         <Card className="p-0">
-          <div className="flex flex-col gap-3 border-b border-slate-200 px-5 py-5 md:flex-row md:items-start md:justify-between">
+          <div className="flex flex-col gap-3 border-b border-slate-200 px-4 py-4 sm:px-5 sm:py-5 md:flex-row md:items-start md:justify-between">
             <div className="min-w-0">
               <p className="text-xs font-extrabold uppercase tracking-wide text-slate-500">
                 Two-Hour Report
@@ -280,32 +286,33 @@ function PeriodReportPage({ appState }) {
               variant="success"
               onClick={handleExportExcel}
               disabled={rows.length === 0}
+              className="w-full md:w-auto"
             >
               Export Excel
             </Button>
           </div>
 
-          <div className="p-5">
+          <div className="p-4 sm:p-5">
           {isLoadingReport ? (
             <ReportLoadingState message="Memuat report 2 jam..." />
           ) : (
             <>
-              <section className="grid gap-3 md:grid-cols-3">
-                <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+              <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                <div className="min-w-0 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
                   <p className="text-[11px] font-extrabold uppercase tracking-wide text-slate-500">Total Truck</p>
-                  <p className="mt-2 text-xl font-black text-slate-950">
+                  <p className="mt-2 break-words text-lg font-black text-slate-950 sm:text-xl">
                     {formatTruck(summary.totalTruck)}
                   </p>
                 </div>
-                <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+                <div className="min-w-0 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
                   <p className="text-[11px] font-extrabold uppercase tracking-wide text-slate-500">Total Discharge</p>
-                  <p className="mt-2 text-xl font-black text-slate-950">
+                  <p className="mt-2 break-words text-lg font-black text-slate-950 sm:text-xl">
                     {formatMT(summary.totalDischarge)}
                   </p>
                 </div>
-                <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+                <div className="min-w-0 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
                   <p className="text-[11px] font-extrabold uppercase tracking-wide text-slate-500">Average Load</p>
-                  <p className="mt-2 text-xl font-black text-slate-950">
+                  <p className="mt-2 break-words text-lg font-black text-slate-950 sm:text-xl">
                     {formatMT(summary.averageTonnage)}
                   </p>
                 </div>
@@ -313,40 +320,76 @@ function PeriodReportPage({ appState }) {
 
               <section className="mt-6">
                 <h3 className="mb-3 text-base font-extrabold text-slate-900">Breakdown Per Hatch</h3>
-                <Table
-                  columns={columns}
-                  data={rows}
-                  emptyMessage="Data hatch belum tersedia."
-                  tableClassName="min-w-[720px]"
-                />
+                <div className="grid gap-3 md:hidden">
+                  {rows.length === 0 ? (
+                    <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm font-semibold text-slate-500">
+                      Data hatch belum tersedia.
+                    </div>
+                  ) : (
+                    rows.map((row) => (
+                      <article key={row.hatch} className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+                        <h3 className="text-lg font-black text-slate-950">{row.hatch}</h3>
+                        <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">
+                          <div>
+                            <dt className="font-bold uppercase text-slate-500">Truck</dt>
+                            <dd className="mt-1 font-black text-slate-950">
+                              {formatTruck(row.totalTruck)}
+                            </dd>
+                          </div>
+                          <div>
+                            <dt className="font-bold uppercase text-slate-500">Tonnage</dt>
+                            <dd className="mt-1 font-black text-slate-950">
+                              {formatMT(row.totalDischarge)}
+                            </dd>
+                          </div>
+                          <div>
+                            <dt className="font-bold uppercase text-slate-500">Average</dt>
+                            <dd className="mt-1 font-black text-slate-950">
+                              {formatMT(row.averageTonnage)}
+                            </dd>
+                          </div>
+                        </dl>
+                      </article>
+                    ))
+                  )}
+                </div>
+
+                <div className="hidden md:block">
+                  <Table
+                    columns={columns}
+                    data={rows}
+                    emptyMessage="Data hatch belum tersedia."
+                    tableClassName="min-w-[720px]"
+                  />
+                </div>
               </section>
 
               <section className="mt-6">
                 <h3 className="mb-3 text-base font-extrabold text-slate-900">
                   Running Position Setelah Periode
                 </h3>
-                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-                  <div className="rounded-lg border border-slate-200 bg-white px-4 py-3">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                  <div className="min-w-0 rounded-lg border border-slate-200 bg-white px-4 py-3">
                     <p className="text-[11px] font-extrabold uppercase tracking-wide text-slate-500">Total Cargo</p>
-                    <p className="mt-2 text-lg font-black text-slate-950">
+                    <p className="mt-2 break-words text-base font-black text-slate-950 sm:text-lg">
                       {formatMT(runningPosition.totalCargo)}
                     </p>
                   </div>
-                  <div className="rounded-lg border border-slate-200 bg-white px-4 py-3">
+                  <div className="min-w-0 rounded-lg border border-slate-200 bg-white px-4 py-3">
                     <p className="text-[11px] font-extrabold uppercase tracking-wide text-slate-500">Total Discharge</p>
-                    <p className="mt-2 text-lg font-black text-slate-950">
+                    <p className="mt-2 break-words text-base font-black text-slate-950 sm:text-lg">
                       {formatMT(runningPosition.totalDischarge)}
                     </p>
                   </div>
-                  <div className="rounded-lg border border-slate-200 bg-white px-4 py-3">
+                  <div className="min-w-0 rounded-lg border border-slate-200 bg-white px-4 py-3">
                     <p className="text-[11px] font-extrabold uppercase tracking-wide text-slate-500">Remaining Cargo</p>
-                    <p className="mt-2 text-lg font-black text-slate-950">
+                    <p className="mt-2 break-words text-base font-black text-slate-950 sm:text-lg">
                       {formatMT(runningPosition.remainingCargo)}
                     </p>
                   </div>
-                  <div className="rounded-lg border border-slate-200 bg-white px-4 py-3">
+                  <div className="min-w-0 rounded-lg border border-slate-200 bg-white px-4 py-3">
                     <p className="text-[11px] font-extrabold uppercase tracking-wide text-slate-500">Progress %</p>
-                    <p className="mt-2 text-lg font-black text-slate-950">
+                    <p className="mt-2 break-words text-base font-black text-slate-950 sm:text-lg">
                       {formatPercentage(runningPosition.progressPercentage)}
                     </p>
                   </div>
