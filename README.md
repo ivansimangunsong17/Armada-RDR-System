@@ -18,6 +18,10 @@ npm install
 npm run dev
 ```
 
+## Dokumentasi
+
+- [Dokumentasi fitur dan checklist blackbox testing](docs/feature-documentation-and-blackbox-testing.md)
+
 ## Catatan Fondasi
 
 - Jalankan migration Supabase sebelum production, termasuk `20260612_harden_foundation_profiles_gate_in.sql`.
