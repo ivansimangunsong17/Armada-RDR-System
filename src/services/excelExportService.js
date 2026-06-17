@@ -575,6 +575,7 @@ export function exportPeriodReportExcel({
   rows,
   summary,
   runningPosition,
+  destinationSummary = [],
 }) {
   const metadataRows = buildMetadataRows({
     vessel,
@@ -584,9 +585,9 @@ export function exportPeriodReportExcel({
   })
   const summaryRows = [
     ['Metric', 'Value'],
-    ['Total Truck', formatTruck(summary.totalTruck)],
-    ['Total Discharge', formatNumber(summary.totalDischarge)],
-    ['Average Load', formatNumber(summary.averageTonnage)],
+    ['Total Truck Periode', formatTruck(summary.totalTruck)],
+    ['Total Discharge Periode', formatNumber(summary.totalDischarge)],
+    ['Average Periode', formatNumber(summary.averageTonnage)],
   ]
   const detailRows = [
     ['Hatch', 'Truck', 'Tonnage', 'Average'],
@@ -610,12 +611,98 @@ export function exportPeriodReportExcel({
     ['Total Discharge', formatNumber(runningPosition?.totalDischarge)],
     ['Remaining Cargo', formatNumber(runningPosition?.remainingCargo)],
     ['Progress %', formatPercentage(runningPosition?.progressPercentage)],
+    ['Total Truck', formatTruck(runningPosition?.totalTruck)],
+    ['Average Load', formatNumber(runningPosition?.averageLoad)],
+  ]
+  const runningHatchRows = [
+    ['Hatch', 'Total Cargo', 'Total Discharge', 'Remaining', 'Progress %', 'Total Truck', 'Average'],
+    ...(runningPosition?.hatchRows || []).map((row) => [
+      row.hatch,
+      formatNumber(row.initialCargo),
+      formatNumber(row.totalDischarge),
+      formatNumber(row.remainingCargo),
+      formatPercentage(row.progressPercentage),
+      formatTruck(row.totalTruck),
+      formatNumber(row.averageTonnage),
+    ]),
+  ]
+  const destinationTotalDischarge = destinationSummary.reduce(
+    (total, row) => total + (Number(row.totalDischarge) || 0),
+    0,
+  )
+  const destinationTotalDt = destinationSummary.reduce(
+    (total, row) => total + (Number(row.totalDt) || 0),
+    0,
+  )
+  const destinationRows = [
+    ['Destination', 'Netto', 'DT', 'Average'],
+    ...destinationSummary.map((row) => [
+      row.destination || '-',
+      formatNumber(row.totalDischarge),
+      formatTruck(row.totalDt),
+      formatNumber(row.averageTonnage),
+    ]),
+    [],
+    [
+      'TOTAL',
+      formatNumber(destinationTotalDischarge),
+      formatTruck(destinationTotalDt),
+      formatNumber(destinationTotalDt > 0 ? destinationTotalDischarge / destinationTotalDt : 0),
+    ],
   ]
 
   writeWorkbook(`period-2-hour-report-${safeFilePart(vessel?.vesselName)}-${reportDate || getTodayLabel()}.xlsx`, [
     { name: 'Metadata', rows: metadataRows },
-    { name: 'Summary Periode', rows: summaryRows },
-    { name: 'Breakdown Per Hatch', rows: detailRows },
     { name: 'Running Position', rows: runningRows },
+    { name: 'Hatch Running Position', rows: runningHatchRows },
+    { name: 'Period Production', rows: summaryRows },
+    { name: 'Production Per Hatch', rows: detailRows },
+    { name: 'Destination Summary', rows: destinationRows },
+  ])
+}
+
+export function exportInputEntriesExcel({ vessel, rows }) {
+  const metadataRows = [
+    ['Vessel', vessel?.vesselName || '-'],
+    ['Cargo Owner', vessel?.company || '-'],
+    ['Generated At', getPrintedPreviewLabel()],
+    ['Total Data', rows.length],
+  ]
+  const detailRows = [
+    [
+      'Gate In Date',
+      'Gate In Time',
+      'Gate Out Date',
+      'Gate Out Time',
+      'Checker',
+      'Plate No.',
+      'Hatch',
+      'Destination',
+      'Tonnage',
+      'No Surat Jalan',
+      'No SJ Timbangan',
+      'Barcode Receipt',
+      'Notes',
+    ],
+    ...rows.map((row) => [
+      row.gateInDate || '-',
+      row.gateInTime || '-',
+      row.gateOutDate || '-',
+      row.gateOutTime || '-',
+      row.checkerName || '-',
+      row.plateNumber || '-',
+      row.hatch || '-',
+      row.destination || '-',
+      formatNumber(row.tonnage),
+      row.deliveryOrderNumber || '-',
+      row.scaleTicketNumber || '-',
+      row.barcodePhotoUrl || '-',
+      row.notes || '-',
+    ]),
+  ]
+
+  writeWorkbook(`input-monitoring-${safeFilePart(vessel?.vesselName)}-${getTodayLabel()}.xlsx`, [
+    { name: 'Metadata', rows: metadataRows },
+    { name: 'Input Monitoring', rows: detailRows },
   ])
 }

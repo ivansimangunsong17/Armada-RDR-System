@@ -11,7 +11,7 @@ import {
   getReportDataset,
 } from '../services/reportService.js'
 import { exportRunningReportExcel } from '../services/excelExportService.js'
-import { exportRunningReportPDF } from '../services/pdfExportService.js'
+import { exportRunningReportPDF, printRunningReportPDF } from '../services/pdfExportService.js'
 import { formatDate, formatPercentage, formatTruck } from '../utils/formatters.js'
 
 function formatManagementNumber(value) {
@@ -202,8 +202,13 @@ function RunningReportPage({ appState }) {
     { label: 'Average Load', value: formatManagementNumber(averageLoad) },
   ]
 
-  function handlePrint() {
-    window.print()
+  async function handlePrint() {
+    await printRunningReportPDF({
+      vessel: selectedVessel,
+      summary: summaryReport,
+      hatchRows: runningReport,
+      destinationSummary,
+    })
   }
 
   async function handleExportExcel() {
@@ -272,7 +277,13 @@ function RunningReportPage({ appState }) {
           >
             Export PDF
           </Button>
-          <Button type="button" variant="secondary" onClick={handlePrint} className="w-full lg:w-auto lg:min-w-20">
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={handlePrint}
+            disabled={!selectedVessel || !hasReportData}
+            className="w-full lg:w-auto lg:min-w-20"
+          >
             Print
           </Button>
           {secondaryReportLinks.map((link) => (
@@ -348,7 +359,7 @@ function RunningReportPage({ appState }) {
             </Card>
           ) : (
             <>
-          <Card className="p-0">
+          <Card className="print-root p-0">
             <div className="border-b border-slate-200 px-5 py-5">
               <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                 <div className="min-w-0">

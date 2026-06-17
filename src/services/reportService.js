@@ -141,21 +141,49 @@ function isEntryIncludedAfterPeriod(entry, reportDate, periodEndHour) {
   return minutes < Number(periodEndHour) * 60
 }
 
-function buildPeriodRowsWithAllHatches(hatchRows, periodRows) {
-  const periodByHatchId = Object.fromEntries(periodRows.map((row) => [row.hatchCargoId, row]))
+function isEntryIncludedInPeriod(entry, reportDate, periodStartHour, periodEndHour) {
+  if (!entry.gate_out_date || !entry.gate_out_time) return false
+  if (entry.gate_out_date !== reportDate) return false
+
+  const minutes = getTimeMinutes(entry.gate_out_time)
+  if (minutes === null) return false
+
+  const startMinutes = Number(periodStartHour) * 60
+  const endMinutes = Number(periodEndHour) * 60
+
+  return minutes >= startMinutes && minutes < endMinutes
+}
+
+function buildTimedRowsFromEntries(hatchRows, entries) {
+  const totalsByHatchId = entries.reduce((result, entry) => {
+    const hatchCargoId = entry.hatch_cargo_id
+
+    if (!hatchCargoId) return result
+
+    const current = result[hatchCargoId] || {
+      totalDischarge: 0,
+      totalTruck: 0,
+    }
+
+    current.totalDischarge += safeNumber(entry.tonnage)
+    current.totalTruck += 1
+    result[hatchCargoId] = current
+
+    return result
+  }, {})
 
   return hatchRows.map((hatch) => {
-    const periodRow = periodByHatchId[hatch.hatchCargoId]
-    const totalDischarge = safeNumber(periodRow?.totalDischarge)
-    const totalTruck = safeNumber(periodRow?.totalTruck)
+    const totals = totalsByHatchId[hatch.hatchCargoId] || {}
+    const totalDischarge = safeNumber(totals.totalDischarge)
+    const totalTruck = safeNumber(totals.totalTruck)
 
     return {
       vesselId: hatch.vesselId,
-      vesselName: periodRow?.vesselName || '',
-      destination: periodRow?.destination || '',
-      gateOutDate: periodRow?.gateOutDate || '',
-      periodStartHour: periodRow?.periodStartHour ?? null,
-      periodEndHour: periodRow?.periodEndHour ?? null,
+      vesselName: '',
+      destination: '',
+      gateOutDate: '',
+      periodStartHour: null,
+      periodEndHour: null,
       hatchCargoId: hatch.hatchCargoId,
       hatchNo: hatch.hatchNo,
       hatch: hatch.hatch,
@@ -170,9 +198,22 @@ function buildRunningPositionAfterPeriod(hatchRows, entries) {
   const totalCargo = hatchRows.reduce((total, hatch) => total + safeNumber(hatch.initialCargo), 0)
   const totalDischarge = entries.reduce((total, entry) => total + safeNumber(entry.tonnage), 0)
   const totalTruck = entries.length
-  const remainingCargo = Math.max(totalCargo - totalDischarge, 0)
+  const remainingCargo = totalCargo - totalDischarge
   const progressPercentage = totalCargo > 0 ? Math.min((totalDischarge / totalCargo) * 100, 100) : 0
   const averageLoad = totalTruck > 0 ? totalDischarge / totalTruck : 0
+  const hatchRunningRows = buildTimedRowsFromEntries(hatchRows, entries).map((row) => {
+    const hatchCargo = hatchRows.find((hatch) => hatch.hatchCargoId === row.hatchCargoId)
+    const initialCargo = safeNumber(hatchCargo?.initialCargo)
+
+    return {
+      ...row,
+      initialCargo,
+      remainingCargo: initialCargo - safeNumber(row.totalDischarge),
+      progressPercentage: initialCargo > 0
+        ? Math.min((safeNumber(row.totalDischarge) / initialCargo) * 100, 100)
+        : 0,
+    }
+  })
 
   return {
     totalCargo,
@@ -181,7 +222,30 @@ function buildRunningPositionAfterPeriod(hatchRows, entries) {
     remainingCargo,
     progressPercentage,
     averageLoad,
+    hatchRows: hatchRunningRows,
   }
+}
+
+function buildPeriodDestinationSummary(entries, destinationMap) {
+  const groupedRows = entries.reduce((result, entry) => {
+    const destinationId = entry.destination_id || entry.vessels?.destination_id || 'unknown'
+    const current = result[destinationId] || {
+      destinationId,
+      destination: destinationMap[destinationId] || '-',
+      totalDischarge: 0,
+      totalDt: 0,
+      averageTonnage: 0,
+    }
+
+    current.totalDischarge += safeNumber(entry.tonnage)
+    current.totalDt += 1
+    current.averageTonnage = current.totalDt > 0 ? current.totalDischarge / current.totalDt : 0
+    result[destinationId] = current
+
+    return result
+  }, {})
+
+  return Object.values(groupedRows).sort((a, b) => a.destination.localeCompare(b.destination))
 }
 
 export function buildTimedReportSummary(rows) {
@@ -497,21 +561,12 @@ export async function getPeriodTwoHourReportRows({
     return {
       data: [],
       runningPosition: buildRunningPositionAfterPeriod([], []),
+      destinationSummary: [],
       error: null,
     }
   }
 
-  const [periodResult, hatchResult, entriesResult] = await Promise.all([
-    supabase
-    .from('period_2_hour_report')
-    .select(
-      'vessel_id, vessel_name, destination, gate_out_date, period_start_hour, period_end_hour, hatch_cargo_id, hatch_no, hatch_label, total_discharge, total_dt, average_tonnage',
-    )
-    .eq('vessel_id', vesselId)
-    .eq('gate_out_date', reportDate)
-    .eq('period_start_hour', Number(periodStartHour))
-    .eq('period_end_hour', Number(periodEndHour))
-      .order('hatch_no', { ascending: true }),
+  const [hatchResult, entriesResult, destinationsResult] = await Promise.all([
     supabase
       .from('hatch_cargo')
       .select('id, vessel_id, hatch_no, hatch_label, initial_cargo')
@@ -519,20 +574,42 @@ export async function getPeriodTwoHourReportRows({
       .order('hatch_no', { ascending: true }),
     supabase
       .from('discharge_entries')
-      .select('id, tonnage, gate_out_date, gate_out_time')
+      .select(
+        `
+          id,
+          hatch_cargo_id,
+          destination_id,
+          tonnage,
+          gate_out_date,
+          gate_out_time,
+          vessels (
+            destination_id
+          )
+        `,
+      )
       .eq('vessel_id', vesselId)
       .lte('gate_out_date', reportDate),
+    supabase
+      .from('destinations')
+      .select('id, name'),
   ])
 
   const hatchRows = (hatchResult.data || []).map(mapHatchCargoRow)
-  const periodRows = (periodResult.data || []).map(mapTimedReportRow)
+  const entries = entriesResult.data || []
+  const periodEntries = entries.filter((entry) =>
+    isEntryIncludedInPeriod(entry, reportDate, periodStartHour, periodEndHour),
+  )
   const runningEntries = (entriesResult.data || []).filter((entry) =>
     isEntryIncludedAfterPeriod(entry, reportDate, periodEndHour),
   )
+  const destinationMap = Object.fromEntries(
+    (destinationsResult.data || []).map((destination) => [destination.id, destination.name]),
+  )
 
   return {
-    data: buildPeriodRowsWithAllHatches(hatchRows, periodRows),
+    data: buildTimedRowsFromEntries(hatchRows, periodEntries),
     runningPosition: buildRunningPositionAfterPeriod(hatchRows, runningEntries),
-    error: periodResult.error || hatchResult.error || entriesResult.error,
+    destinationSummary: buildPeriodDestinationSummary(periodEntries, destinationMap),
+    error: hatchResult.error || entriesResult.error || destinationsResult.error,
   }
 }

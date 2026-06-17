@@ -11,6 +11,8 @@ import {
   getDischargeMutationError,
   updateDischargeEntry,
 } from '../services/dischargeService.js'
+import { exportInputEntriesExcel } from '../services/excelExportService.js'
+import { exportInputEntriesPDF } from '../services/pdfExportService.js'
 import { uploadBarcodeReceiptPhoto } from '../services/storageService.js'
 import { getActiveVesselsForReports } from '../services/reportService.js'
 import { getHatchCargoByVesselIds, getVesselDestinations } from '../services/vesselService.js'
@@ -118,6 +120,7 @@ function InputMonitoringPage({ appState }) {
   const [barcodePhotoFile, setBarcodePhotoFile] = useState(null)
   const [barcodePhotoPreviewUrl, setBarcodePhotoPreviewUrl] = useState('')
   const [barcodePhotoInputKey, setBarcodePhotoInputKey] = useState(0)
+  const [isExporting, setIsExporting] = useState(false)
 
   const selectedVessel = useMemo(
     () => vessels.find((vessel) => vessel.id === selectedVesselId) || vessels[0],
@@ -210,6 +213,46 @@ function InputMonitoringPage({ appState }) {
     }
 
     setIsEntriesLoading(false)
+  }
+
+  async function getAllEntriesForExport() {
+    if (!selectedVessel?.id) {
+      return []
+    }
+
+    setIsExporting(true)
+    setLoadError('')
+
+    const result = await getDischargeEntriesForVessel(selectedVessel.id)
+
+    if (result.error) {
+      setLoadError('Gagal memuat semua input checker untuk export.')
+      setIsExporting(false)
+      return []
+    }
+
+    setIsExporting(false)
+    return result.data
+  }
+
+  async function handleExportExcel() {
+    const exportRows = await getAllEntriesForExport()
+    if (exportRows.length === 0) return
+
+    exportInputEntriesExcel({
+      vessel: selectedVessel,
+      rows: exportRows,
+    })
+  }
+
+  async function handleExportPDF() {
+    const exportRows = await getAllEntriesForExport()
+    if (exportRows.length === 0) return
+
+    await exportInputEntriesPDF({
+      vessel: selectedVessel,
+      rows: exportRows,
+    })
   }
 
   function updateForm(field, value) {
@@ -676,6 +719,24 @@ function InputMonitoringPage({ appState }) {
         title={selectedVessel?.vesselName || 'Input Checker'}
         subtitle="Data input checker per vessel. Gunakan pagination untuk menjaga halaman tetap ringan."
       >
+        <div className="mb-4 flex flex-col gap-2 md:flex-row md:justify-end">
+          <Button
+            type="button"
+            variant="success"
+            onClick={handleExportExcel}
+            disabled={!selectedVessel || totalEntries === 0 || isExporting}
+          >
+            {isExporting ? 'Preparing...' : 'Export Excel'}
+          </Button>
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={handleExportPDF}
+            disabled={!selectedVessel || totalEntries === 0 || isExporting}
+          >
+            {isExporting ? 'Preparing...' : 'Export PDF'}
+          </Button>
+        </div>
         <Table
           columns={columns}
           data={entries}

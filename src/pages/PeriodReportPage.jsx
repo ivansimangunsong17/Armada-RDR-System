@@ -5,11 +5,13 @@ import Input from '../components/ui/Input.jsx'
 import Select from '../components/ui/Select.jsx'
 import Table from '../components/ui/Table.jsx'
 import {
+  buildDestinationSummaryTotal,
   buildTimedReportSummary,
   getActiveVesselsForReports,
   getPeriodTwoHourReportRows,
 } from '../services/reportService.js'
 import { exportPeriodReportExcel } from '../services/excelExportService.js'
+import { exportPeriodReportPDF } from '../services/pdfExportService.js'
 import { formatMT, formatPercentage, formatTruck } from '../utils/formatters.js'
 import Button from '../components/ui/Button.jsx'
 
@@ -35,6 +37,7 @@ const emptyRunningPosition = {
   remainingCargo: 0,
   progressPercentage: 0,
   averageLoad: 0,
+  hatchRows: [],
 }
 
 function getReportLinks(role) {
@@ -96,6 +99,7 @@ function PeriodReportPage({ appState }) {
   const [periodKey, setPeriodKey] = useState('')
   const [rows, setRows] = useState([])
   const [runningPosition, setRunningPosition] = useState(emptyRunningPosition)
+  const [destinationSummary, setDestinationSummary] = useState([])
   const [isLoadingVessels, setIsLoadingVessels] = useState(true)
   const [isLoadingReport, setIsLoadingReport] = useState(false)
   const [error, setError] = useState('')
@@ -109,6 +113,7 @@ function PeriodReportPage({ appState }) {
   )
   const isFilterComplete = Boolean(selectedVessel?.id && reportDate && selectedPeriod)
   const summary = buildTimedReportSummary(rows)
+  const destinationSummaryTotal = buildDestinationSummaryTotal(destinationSummary)
 
   useEffect(() => {
     loadVessels()
@@ -137,6 +142,7 @@ function PeriodReportPage({ appState }) {
     if (!isFilterComplete) {
       setRows([])
       setRunningPosition(emptyRunningPosition)
+      setDestinationSummary([])
       return
     }
 
@@ -156,6 +162,7 @@ function PeriodReportPage({ appState }) {
 
     setRows(result.data)
     setRunningPosition(result.runningPosition || emptyRunningPosition)
+    setDestinationSummary(result.destinationSummary || [])
     setIsLoadingReport(false)
   }
 
@@ -177,6 +184,39 @@ function PeriodReportPage({ appState }) {
       render: (row) => <span className="block text-right">{formatMT(row.averageTonnage)}</span>,
     },
   ]
+  const runningHatchColumns = [
+    { key: 'hatch', label: 'Hatch' },
+    {
+      key: 'initialCargo',
+      label: 'Total Cargo',
+      render: (row) => <span className="block text-right">{formatMT(row.initialCargo)}</span>,
+    },
+    {
+      key: 'totalDischarge',
+      label: 'Total Discharge',
+      render: (row) => <span className="block text-right">{formatMT(row.totalDischarge)}</span>,
+    },
+    {
+      key: 'remainingCargo',
+      label: 'Remaining',
+      render: (row) => <span className="block text-right">{formatMT(row.remainingCargo)}</span>,
+    },
+    {
+      key: 'progressPercentage',
+      label: 'Progress %',
+      render: (row) => <span className="block text-right">{formatPercentage(row.progressPercentage)}</span>,
+    },
+    {
+      key: 'totalTruck',
+      label: 'Total Truck',
+      render: (row) => <span className="block text-right">{formatTruck(row.totalTruck)}</span>,
+    },
+    {
+      key: 'averageTonnage',
+      label: 'Average',
+      render: (row) => <span className="block text-right">{formatMT(row.averageTonnage)}</span>,
+    },
+  ]
 
   function handleExportExcel() {
     exportPeriodReportExcel({
@@ -186,6 +226,18 @@ function PeriodReportPage({ appState }) {
       rows,
       summary,
       runningPosition,
+    })
+  }
+
+  async function handleExportPDF() {
+    await exportPeriodReportPDF({
+      vessel: selectedVessel,
+      reportDate,
+      periodLabel: selectedPeriod?.label,
+      rows,
+      summary,
+      runningPosition,
+      destinationSummary,
     })
   }
 
@@ -281,15 +333,26 @@ function PeriodReportPage({ appState }) {
                 {selectedPeriod?.label || '-'} - {reportDate || '-'}
               </p>
             </div>
-            <Button
-              type="button"
-              variant="success"
-              onClick={handleExportExcel}
-              disabled={rows.length === 0}
-              className="w-full md:w-auto"
-            >
-              Export Excel
-            </Button>
+            <div className="grid w-full grid-cols-1 gap-2 sm:grid-cols-2 md:w-auto">
+              <Button
+                type="button"
+                variant="success"
+                onClick={handleExportExcel}
+                disabled={rows.length === 0}
+                className="w-full md:w-auto"
+              >
+                Export Excel
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={handleExportPDF}
+                disabled={rows.length === 0}
+                className="w-full md:w-auto"
+              >
+                Export PDF
+              </Button>
+            </div>
           </div>
 
           <div className="p-4 sm:p-5">
@@ -297,78 +360,16 @@ function PeriodReportPage({ appState }) {
             <ReportLoadingState message="Memuat report 2 jam..." />
           ) : (
             <>
-              <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                <div className="min-w-0 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
-                  <p className="text-[11px] font-extrabold uppercase tracking-wide text-slate-500">Total Truck</p>
-                  <p className="mt-2 break-words text-lg font-black text-slate-950 sm:text-xl">
-                    {formatTruck(summary.totalTruck)}
+              <section>
+                <div className="mb-3">
+                  <h3 className="text-base font-extrabold text-slate-900">
+                    Running Position Until End Period
+                  </h3>
+                  <p className="mt-1 text-sm text-slate-500">
+                    Posisi kumulatif sampai akhir periode {selectedPeriod?.label || '-'}.
                   </p>
                 </div>
-                <div className="min-w-0 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
-                  <p className="text-[11px] font-extrabold uppercase tracking-wide text-slate-500">Total Discharge</p>
-                  <p className="mt-2 break-words text-lg font-black text-slate-950 sm:text-xl">
-                    {formatMT(summary.totalDischarge)}
-                  </p>
-                </div>
-                <div className="min-w-0 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
-                  <p className="text-[11px] font-extrabold uppercase tracking-wide text-slate-500">Average Load</p>
-                  <p className="mt-2 break-words text-lg font-black text-slate-950 sm:text-xl">
-                    {formatMT(summary.averageTonnage)}
-                  </p>
-                </div>
-              </section>
-
-              <section className="mt-6">
-                <h3 className="mb-3 text-base font-extrabold text-slate-900">Breakdown Per Hatch</h3>
-                <div className="grid gap-3 md:hidden">
-                  {rows.length === 0 ? (
-                    <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm font-semibold text-slate-500">
-                      Data hatch belum tersedia.
-                    </div>
-                  ) : (
-                    rows.map((row) => (
-                      <article key={row.hatch} className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-                        <h3 className="text-lg font-black text-slate-950">{row.hatch}</h3>
-                        <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">
-                          <div>
-                            <dt className="font-bold uppercase text-slate-500">Truck</dt>
-                            <dd className="mt-1 font-black text-slate-950">
-                              {formatTruck(row.totalTruck)}
-                            </dd>
-                          </div>
-                          <div>
-                            <dt className="font-bold uppercase text-slate-500">Tonnage</dt>
-                            <dd className="mt-1 font-black text-slate-950">
-                              {formatMT(row.totalDischarge)}
-                            </dd>
-                          </div>
-                          <div>
-                            <dt className="font-bold uppercase text-slate-500">Average</dt>
-                            <dd className="mt-1 font-black text-slate-950">
-                              {formatMT(row.averageTonnage)}
-                            </dd>
-                          </div>
-                        </dl>
-                      </article>
-                    ))
-                  )}
-                </div>
-
-                <div className="hidden md:block">
-                  <Table
-                    columns={columns}
-                    data={rows}
-                    emptyMessage="Data hatch belum tersedia."
-                    tableClassName="min-w-[720px]"
-                  />
-                </div>
-              </section>
-
-              <section className="mt-6">
-                <h3 className="mb-3 text-base font-extrabold text-slate-900">
-                  Running Position Setelah Periode
-                </h3>
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-6">
                   <div className="min-w-0 rounded-lg border border-slate-200 bg-white px-4 py-3">
                     <p className="text-[11px] font-extrabold uppercase tracking-wide text-slate-500">Total Cargo</p>
                     <p className="mt-2 break-words text-base font-black text-slate-950 sm:text-lg">
@@ -393,6 +394,115 @@ function PeriodReportPage({ appState }) {
                       {formatPercentage(runningPosition.progressPercentage)}
                     </p>
                   </div>
+                  <div className="min-w-0 rounded-lg border border-slate-200 bg-white px-4 py-3">
+                    <p className="text-[11px] font-extrabold uppercase tracking-wide text-slate-500">Total Truck</p>
+                    <p className="mt-2 break-words text-base font-black text-slate-950 sm:text-lg">
+                      {formatTruck(runningPosition.totalTruck)}
+                    </p>
+                  </div>
+                  <div className="min-w-0 rounded-lg border border-slate-200 bg-white px-4 py-3">
+                    <p className="text-[11px] font-extrabold uppercase tracking-wide text-slate-500">Average Load</p>
+                    <p className="mt-2 break-words text-base font-black text-slate-950 sm:text-lg">
+                      {formatMT(runningPosition.averageLoad)}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="mt-5">
+                  <h4 className="mb-3 text-sm font-extrabold uppercase tracking-wide text-slate-600">
+                    Hatch Running Position
+                  </h4>
+                  <Table
+                    columns={runningHatchColumns}
+                    data={runningPosition.hatchRows || []}
+                    emptyMessage="Data running position belum tersedia."
+                    tableClassName="min-w-[980px]"
+                  />
+                </div>
+              </section>
+
+              <section className="mt-6 border-t border-slate-100 pt-6">
+                <div className="mb-3">
+                  <h3 className="text-base font-extrabold text-slate-900">Period Production</h3>
+                  <p className="mt-1 text-sm text-slate-500">
+                    Produksi khusus dalam boundary {selectedPeriod?.label || '-'}.
+                  </p>
+                </div>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                  <div className="min-w-0 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+                    <p className="text-[11px] font-extrabold uppercase tracking-wide text-slate-500">Total Discharge Periode</p>
+                    <p className="mt-2 break-words text-lg font-black text-slate-950 sm:text-xl">
+                      {formatMT(summary.totalDischarge)}
+                    </p>
+                  </div>
+                  <div className="min-w-0 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+                    <p className="text-[11px] font-extrabold uppercase tracking-wide text-slate-500">Total Truck Periode</p>
+                    <p className="mt-2 break-words text-lg font-black text-slate-950 sm:text-xl">
+                      {formatTruck(summary.totalTruck)}
+                    </p>
+                  </div>
+                  <div className="min-w-0 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+                    <p className="text-[11px] font-extrabold uppercase tracking-wide text-slate-500">Average Periode</p>
+                    <p className="mt-2 break-words text-lg font-black text-slate-950 sm:text-xl">
+                      {formatMT(summary.averageTonnage)}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="mt-5">
+                  <h4 className="mb-3 text-sm font-extrabold uppercase tracking-wide text-slate-600">
+                    Breakdown Per Hatch
+                  </h4>
+                  <Table
+                    columns={columns}
+                    data={rows}
+                    emptyMessage="Data hatch belum tersedia."
+                    tableClassName="min-w-[720px]"
+                  />
+                </div>
+              </section>
+
+              <section className="mt-6 border-t border-slate-100 pt-6">
+                <h3 className="mb-3 text-base font-extrabold text-slate-900">
+                  Destination Summary Periode
+                </h3>
+                <div className="overflow-x-auto rounded-lg border border-slate-200">
+                  <table className="w-full min-w-[640px] border-collapse text-sm">
+                    <thead className="bg-slate-100 text-slate-700">
+                      <tr>
+                        <th className="border border-slate-200 px-4 py-3 text-left font-extrabold">Destination</th>
+                        <th className="border border-slate-200 px-4 py-3 text-right font-extrabold">Netto</th>
+                        <th className="border border-slate-200 px-4 py-3 text-right font-extrabold">DT</th>
+                        <th className="border border-slate-200 px-4 py-3 text-right font-extrabold">Average</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {destinationSummary.length === 0 ? (
+                        <tr>
+                          <td className="border border-slate-200 px-4 py-5 text-center font-semibold text-slate-500" colSpan="4">
+                            Belum ada data destination pada periode ini.
+                          </td>
+                        </tr>
+                      ) : (
+                        <>
+                          {destinationSummary.map((row) => (
+                            <tr key={row.destinationId} className="hover:bg-slate-50">
+                              <td className="border border-slate-200 px-4 py-3 font-bold">{row.destination || '-'}</td>
+                              <td className="border border-slate-200 px-4 py-3 text-right">{formatMT(row.totalDischarge)}</td>
+                              <td className="border border-slate-200 px-4 py-3 text-right">{formatTruck(row.totalDt)}</td>
+                              <td className="border border-slate-200 px-4 py-3 text-right">{formatMT(row.averageTonnage)}</td>
+                            </tr>
+                          ))}
+                          <tr className="bg-slate-100 font-black text-slate-950">
+                            <td className="border border-slate-200 px-4 py-3">{destinationSummaryTotal.destination}</td>
+                            <td className="border border-slate-200 px-4 py-3 text-right">{formatMT(destinationSummaryTotal.totalDischarge)}</td>
+                            <td className="border border-slate-200 px-4 py-3 text-right">{formatTruck(destinationSummaryTotal.totalDt)}</td>
+                            <td className="border border-slate-200 px-4 py-3 text-right">{formatMT(destinationSummaryTotal.averageTonnage)}</td>
+                          </tr>
+                        </>
+                      )}
+                    </tbody>
+                  </table>
                 </div>
               </section>
             </>

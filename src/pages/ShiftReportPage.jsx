@@ -10,6 +10,7 @@ import {
   getShiftReportRows,
 } from '../services/reportService.js'
 import { exportShiftReportExcel } from '../services/excelExportService.js'
+import { exportShiftReportPDF } from '../services/pdfExportService.js'
 import { formatMT, formatTruck } from '../utils/formatters.js'
 import Button from '../components/ui/Button.jsx'
 
@@ -164,6 +165,16 @@ function ShiftReportPage({ appState }) {
     })
   }
 
+  async function handleExportPDF() {
+    await exportShiftReportPDF({
+      vessel: selectedVessel,
+      reportDate,
+      shiftLabel: selectedShift?.label,
+      rows,
+      summary,
+    })
+  }
+
   return (
     <div className="grid gap-5">
       <div className="flex flex-col gap-4 rounded-lg border border-slate-200 bg-white p-4 shadow-sm shadow-slate-200/70 xl:flex-row xl:items-center xl:justify-between">
@@ -253,18 +264,29 @@ function ShiftReportPage({ appState }) {
                 {selectedVessel?.vesselName || '-'}
               </h3>
               <p className="mt-1 text-sm font-semibold text-slate-500">
-                {selectedShift?.label || '-'} · {reportDate || '-'}
+                {selectedShift?.label || '-'} - {reportDate || '-'}
               </p>
             </div>
-            <Button
-              type="button"
-              variant="success"
-              onClick={handleExportExcel}
-              disabled={rows.length === 0}
-              className="w-full md:w-auto"
-            >
-              Export Excel
-            </Button>
+            <div className="grid w-full grid-cols-1 gap-2 sm:grid-cols-2 md:w-auto">
+              <Button
+                type="button"
+                variant="success"
+                onClick={handleExportExcel}
+                disabled={rows.length === 0}
+                className="w-full md:w-auto"
+              >
+                Export Excel
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={handleExportPDF}
+                disabled={rows.length === 0}
+                className="w-full md:w-auto"
+              >
+                Export PDF
+              </Button>
+            </div>
           </div>
 
           <div className="p-4 sm:p-5">

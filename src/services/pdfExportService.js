@@ -1,5 +1,5 @@
 import armadaLogoUrl from '../assets/BGLogoArmada.png'
-import { formatPercentage, formatTruck } from '../utils/formatters.js'
+import { formatDate, formatPercentage, formatTruck } from '../utils/formatters.js'
 
 function safeFilePart(value) {
   return String(value || 'report')
@@ -118,7 +118,72 @@ function drawSummaryCard(doc, { label, value, x, y, width, height }) {
   doc.text(String(value || '-'), x + 3, y + 13)
 }
 
-export async function exportRunningReportPDF({
+function drawReportHeader(doc, {
+  title,
+  vessel,
+  printedAt,
+  subtitleLines = [],
+  logoWidth = 28,
+  logoHeight = 20,
+}) {
+  const pageWidth = doc.internal.pageSize.getWidth()
+  const margin = 10
+
+  return getImageDataUrl(armadaLogoUrl)
+    .then((logoDataUrl) => {
+      doc.addImage(logoDataUrl, 'PNG', margin + 3, 8, logoWidth, logoHeight)
+    })
+    .catch(() => {
+      doc.setFont('helvetica', 'bold')
+      doc.setFontSize(10)
+      doc.text('ARMADA', margin, 16)
+    })
+    .then(() => {
+      doc.setTextColor(20, 20, 20)
+      doc.setFont('helvetica', 'bold')
+      doc.setFontSize(10)
+      doc.text('ARMADA GROUP', pageWidth / 2, 11, { align: 'center' })
+      doc.setFontSize(12)
+      doc.text(getVesselDisplayName(vessel?.vesselName), pageWidth / 2, 18, { align: 'center' })
+      doc.setFontSize(13)
+      doc.setTextColor(150, 0, 0)
+      doc.text(title, pageWidth / 2, 26, { align: 'center' })
+
+      doc.setFont('helvetica', 'normal')
+      doc.setFontSize(8.5)
+      doc.setTextColor(100, 116, 139)
+      doc.text(`Printed preview: ${printedAt}`, pageWidth / 2, 32, { align: 'center' })
+
+      subtitleLines.forEach((line, index) => {
+        doc.text(line, pageWidth / 2, 37 + index * 4.5, { align: 'center' })
+      })
+    })
+}
+
+function getPdfTableTheme() {
+  return {
+    theme: 'grid',
+    styles: {
+      font: 'helvetica',
+      fontSize: 7.6,
+      cellPadding: 2.1,
+      lineColor: [215, 222, 232],
+      lineWidth: 0.15,
+      textColor: [10, 24, 48],
+    },
+    headStyles: {
+      fillColor: [235, 238, 242],
+      textColor: [10, 24, 48],
+      fontStyle: 'bold',
+      halign: 'center',
+    },
+    alternateRowStyles: {
+      fillColor: [248, 250, 252],
+    },
+  }
+}
+
+async function buildRunningReportPDFDocument({
   vessel,
   summary,
   hatchRows,
@@ -143,50 +208,13 @@ export async function exportRunningReportPDF({
     averageLoad,
   )
 
-  try {
-    const logoDataUrl = await getImageDataUrl(armadaLogoUrl)
-    doc.addImage(logoDataUrl, 'PNG', margin + 3, 8, 28, 20)
-  } catch (_error) {
-    doc.setFont('helvetica', 'bold')
-    doc.setFontSize(10)
-    doc.text('ARMADA', margin, 16)
-  }
+  await drawReportHeader(doc, {
+    title: 'RUNNING DISCHARGE RESULT',
+    vessel,
+    printedAt,
+  })
 
-  doc.setTextColor(20, 20, 20)
-  doc.setFont('helvetica', 'bold')
-  doc.setFontSize(10)
-  doc.text('ARMADA GROUP', pageWidth / 2, 11, { align: 'center' })
-  doc.setFontSize(12)
-  doc.text(getVesselDisplayName(vessel?.vesselName), pageWidth / 2, 18, { align: 'center' })
-  doc.setFontSize(13)
-  doc.setTextColor(150, 0, 0)
-  doc.text('RUNNING DISCHARGE RESULT', pageWidth / 2, 26, { align: 'center' })
-
-  doc.setFont('helvetica', 'normal')
-  doc.setFontSize(9)
-  doc.setTextColor(100, 116, 139)
-  doc.text(`Printed preview: ${printedAt}`, pageWidth / 2, 32, { align: 'center' })
-
-  const tableTheme = {
-    theme: 'grid',
-    styles: {
-      font: 'helvetica',
-      fontSize: 7.6,
-      cellPadding: 2.1,
-      lineColor: [215, 222, 232],
-      lineWidth: 0.15,
-      textColor: [10, 24, 48],
-    },
-    headStyles: {
-      fillColor: [235, 238, 242],
-      textColor: [10, 24, 48],
-      fontStyle: 'bold',
-      halign: 'center',
-    },
-    alternateRowStyles: {
-      fillColor: [248, 250, 252],
-    },
-  }
+  const tableTheme = getPdfTableTheme()
 
   const cardGap = 3
   const cardWidth = (contentWidth - cardGap * 2) / 3
@@ -350,5 +378,341 @@ export async function exportRunningReportPDF({
   })
 
   drawFooter(doc, printedAt)
+  return doc
+}
+
+export async function exportRunningReportPDF({
+  vessel,
+  summary,
+  hatchRows,
+  destinationSummary,
+}) {
+  const doc = await buildRunningReportPDFDocument({
+    vessel,
+    summary,
+    hatchRows,
+    destinationSummary,
+  })
+
   doc.save(`running-report-${safeFilePart(vessel?.vesselName)}-${getTodayLabel()}.pdf`)
+}
+
+export async function printRunningReportPDF({
+  vessel,
+  summary,
+  hatchRows,
+  destinationSummary,
+}) {
+  const doc = await buildRunningReportPDFDocument({
+    vessel,
+    summary,
+    hatchRows,
+    destinationSummary,
+  })
+  const pdfUrl = doc.output('bloburl')
+  const printWindow = window.open(pdfUrl, '_blank')
+
+  if (!printWindow) {
+    doc.save(`running-report-${safeFilePart(vessel?.vesselName)}-${getTodayLabel()}.pdf`)
+    return
+  }
+
+  printWindow.addEventListener('load', () => {
+    printWindow.focus()
+    printWindow.print()
+  })
+}
+
+export async function exportShiftReportPDF({
+  vessel,
+  reportDate,
+  shiftLabel,
+  rows,
+  summary,
+}) {
+  const [{ default: jsPDF }, { default: autoTable }] = await Promise.all([
+    import('jspdf'),
+    import('jspdf-autotable'),
+  ])
+  const doc = new jsPDF({
+    orientation: 'landscape',
+    unit: 'mm',
+    format: 'a4',
+  })
+  const printedAt = formatPrintedDate()
+  const pageWidth = doc.internal.pageSize.getWidth()
+  const margin = 10
+  const contentWidth = pageWidth - margin * 2
+  const tableTheme = getPdfTableTheme()
+
+  await drawReportHeader(doc, {
+    title: 'SHIFT DISCHARGE REPORT',
+    vessel,
+    printedAt,
+    subtitleLines: [
+      `Report Date: ${reportDate || '-'}`,
+      `Shift: ${shiftLabel || '-'}`,
+    ],
+  })
+
+  const cardGap = 3
+  const cardWidth = (contentWidth - cardGap * 2) / 3
+  const cardHeight = 16
+  const cardStartY = 48
+  const summaryCards = [
+    ['Total Discharge', formatNumber(summary?.totalDischarge)],
+    ['Total DT', formatTruck(summary?.totalTruck)],
+    ['Average Load', formatNumber(summary?.averageTonnage)],
+  ]
+
+  summaryCards.forEach(([label, value], index) => {
+    drawSummaryCard(doc, {
+      label,
+      value,
+      x: margin + index * (cardWidth + cardGap),
+      y: cardStartY,
+      width: cardWidth,
+      height: cardHeight,
+    })
+  })
+
+  const body = (rows || []).map((row) => [
+    row.hatch || '-',
+    formatNumber(row.totalDischarge),
+    formatTruck(row.totalTruck),
+    formatNumber(row.averageTonnage),
+  ])
+
+  body.push([
+    'TOTAL',
+    formatNumber(summary?.totalDischarge),
+    formatTruck(summary?.totalTruck),
+    formatNumber(summary?.averageTonnage),
+  ])
+
+  autoTable(doc, {
+    ...tableTheme,
+    startY: cardStartY + cardHeight + 8,
+    head: [['Hatch', 'Total Discharge', 'Total DT', 'Average Load']],
+    body,
+    columnStyles: {
+      0: { halign: 'left' },
+      1: { halign: 'right' },
+      2: { halign: 'right' },
+      3: { halign: 'right' },
+    },
+    didParseCell: (data) => {
+      if (data.section === 'body' && data.row.index === body.length - 1) {
+        data.cell.styles.fontStyle = 'bold'
+        data.cell.styles.fillColor = [235, 238, 242]
+      }
+    },
+    margin: { left: margin, right: margin },
+  })
+
+  drawFooter(doc, printedAt)
+  doc.save(`shift-report-${safeFilePart(vessel?.vesselName)}-${safeFilePart(reportDate)}.pdf`)
+}
+
+export async function exportPeriodReportPDF({
+  vessel,
+  reportDate,
+  periodLabel,
+  rows,
+  summary,
+  runningPosition,
+}) {
+  const [{ default: jsPDF }, { default: autoTable }] = await Promise.all([
+    import('jspdf'),
+    import('jspdf-autotable'),
+  ])
+  const doc = new jsPDF({
+    orientation: 'landscape',
+    unit: 'mm',
+    format: 'a4',
+  })
+  const printedAt = formatPrintedDate()
+  const pageWidth = doc.internal.pageSize.getWidth()
+  const margin = 10
+  const contentWidth = pageWidth - margin * 2
+  const tableTheme = getPdfTableTheme()
+
+  await drawReportHeader(doc, {
+    title: 'TWO-HOUR DISCHARGE REPORT',
+    vessel,
+    printedAt,
+    subtitleLines: [
+      `Report Date: ${reportDate || '-'}`,
+      `Period: ${periodLabel || '-'}`,
+    ],
+  })
+
+  const cardGap = 3
+  const cardWidth = (contentWidth - cardGap * 2) / 3
+  const cardHeight = 16
+  const cardStartY = 48
+  const summaryCards = [
+    ['Total Truck', formatTruck(summary?.totalTruck)],
+    ['Total Discharge', formatNumber(summary?.totalDischarge)],
+    ['Average Load', formatNumber(summary?.averageTonnage)],
+  ]
+
+  summaryCards.forEach(([label, value], index) => {
+    drawSummaryCard(doc, {
+      label,
+      value,
+      x: margin + index * (cardWidth + cardGap),
+      y: cardStartY,
+      width: cardWidth,
+      height: cardHeight,
+    })
+  })
+
+  const body = (rows || []).map((row) => [
+    row.hatch || '-',
+    formatTruck(row.totalTruck),
+    formatNumber(row.totalDischarge),
+    formatNumber(row.averageTonnage),
+  ])
+
+  body.push([
+    'TOTAL',
+    formatTruck(summary?.totalTruck),
+    formatNumber(summary?.totalDischarge),
+    formatNumber(summary?.averageTonnage),
+  ])
+
+  autoTable(doc, {
+    ...tableTheme,
+    startY: cardStartY + cardHeight + 8,
+    head: [['Hatch', 'Truck', 'Tonnage', 'Average']],
+    body,
+    columnStyles: {
+      0: { halign: 'left' },
+      1: { halign: 'right' },
+      2: { halign: 'right' },
+      3: { halign: 'right' },
+    },
+    didParseCell: (data) => {
+      if (data.section === 'body' && data.row.index === body.length - 1) {
+        data.cell.styles.fontStyle = 'bold'
+        data.cell.styles.fillColor = [235, 238, 242]
+      }
+    },
+    margin: { left: margin, right: margin },
+  })
+
+  const positionStartY = doc.lastAutoTable.finalY + 8
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(10)
+  doc.setTextColor(0, 0, 0)
+  doc.text('Running Position Setelah Periode', margin, positionStartY)
+  doc.setDrawColor(230, 235, 242)
+  doc.line(margin, positionStartY + 5, pageWidth - margin, positionStartY + 5)
+
+  autoTable(doc, {
+    ...tableTheme,
+    startY: positionStartY + 8,
+    head: [['Total Cargo', 'Total Discharge', 'Remaining Cargo', 'Progress %']],
+    body: [[
+      formatNumber(runningPosition?.totalCargo),
+      formatNumber(runningPosition?.totalDischarge),
+      formatNumber(runningPosition?.remainingCargo),
+      formatPercentage(runningPosition?.progressPercentage),
+    ]],
+    columnStyles: {
+      0: { halign: 'right' },
+      1: { halign: 'right' },
+      2: { halign: 'right' },
+      3: { halign: 'right' },
+    },
+    margin: { left: margin, right: margin },
+  })
+
+  drawFooter(doc, printedAt)
+  doc.save(`period-2-hour-report-${safeFilePart(vessel?.vesselName)}-${safeFilePart(reportDate)}.pdf`)
+}
+
+export async function exportInputEntriesPDF({ vessel, rows }) {
+  const [{ default: jsPDF }, { default: autoTable }] = await Promise.all([
+    import('jspdf'),
+    import('jspdf-autotable'),
+  ])
+  const doc = new jsPDF({
+    orientation: 'landscape',
+    unit: 'mm',
+    format: 'a4',
+  })
+  const printedAt = formatPrintedDate()
+  const tableTheme = getPdfTableTheme()
+  const margin = 8
+
+  await drawReportHeader(doc, {
+    title: 'INPUT MONITORING REPORT',
+    vessel,
+    printedAt,
+    subtitleLines: [
+      `Cargo Owner: ${vessel?.company || '-'}`,
+      `Total Data: ${rows.length}`,
+    ],
+    logoWidth: 26,
+    logoHeight: 18,
+  })
+
+  autoTable(doc, {
+    ...tableTheme,
+    startY: 48,
+    styles: {
+      ...tableTheme.styles,
+      fontSize: 6.2,
+      cellPadding: 1.5,
+      overflow: 'linebreak',
+    },
+    head: [[
+      'Gate In Date',
+      'Gate In Time',
+      'Gate Out Date',
+      'Gate Out Time',
+      'Checker',
+      'Plate No.',
+      'Hatch',
+      'Destination',
+      'Tonnage',
+      'No Surat Jalan',
+      'No SJ Timbangan',
+      'Notes',
+    ]],
+    body: rows.map((row) => [
+      formatDate(row.gateInDate),
+      row.gateInTime || '-',
+      formatDate(row.gateOutDate),
+      row.gateOutTime || '-',
+      row.checkerName || '-',
+      row.plateNumber || '-',
+      row.hatch || '-',
+      row.destination || '-',
+      formatNumber(row.tonnage),
+      row.deliveryOrderNumber || '-',
+      row.scaleTicketNumber || '-',
+      row.notes || '-',
+    ]),
+    columnStyles: {
+      0: { cellWidth: 21 },
+      1: { cellWidth: 18 },
+      2: { cellWidth: 21 },
+      3: { cellWidth: 18 },
+      4: { cellWidth: 28 },
+      5: { cellWidth: 24 },
+      6: { cellWidth: 13 },
+      7: { cellWidth: 22 },
+      8: { halign: 'right', cellWidth: 20 },
+      9: { cellWidth: 26 },
+      10: { cellWidth: 24 },
+      11: { cellWidth: 35 },
+    },
+    margin: { left: margin, right: margin },
+  })
+
+  drawFooter(doc, printedAt)
+  doc.save(`input-monitoring-${safeFilePart(vessel?.vesselName)}-${getTodayLabel()}.pdf`)
 }
