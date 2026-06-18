@@ -13,6 +13,7 @@ import { exportShiftReportExcel } from '../services/excelExportService.js'
 import { exportShiftReportPDF } from '../services/pdfExportService.js'
 import { formatMT, formatTruck } from '../utils/formatters.js'
 import Button from '../components/ui/Button.jsx'
+import { normalizeRole } from '../utils/roles.js'
 
 const shiftOptions = [
   { value: 'shift_1', label: 'Shift 1 (08.00 - 16.00)' },
@@ -21,7 +22,7 @@ const shiftOptions = [
 ]
 
 function getReportLinks(role) {
-  const basePath = role === 'admin' ? '/admin' : '/supervisor'
+  const basePath = normalizeRole(role) === 'admin' ? '/admin' : '/viewer'
 
   return [
     { to: `${basePath}/running-report`, label: 'Running Report' },
@@ -180,7 +181,7 @@ function ShiftReportPage({ appState }) {
       <div className="flex flex-col gap-4 rounded-lg border border-slate-200 bg-white p-4 shadow-sm shadow-slate-200/70 xl:flex-row xl:items-center xl:justify-between">
         <div className="min-w-0">
           <p className="text-xs font-extrabold uppercase tracking-wide text-red-800">
-            Supervisor Report
+            Report Viewer
           </p>
           <h2 className="mt-1 text-2xl font-black text-slate-950">Report per Shift</h2>
           <p className="mt-1 text-sm text-slate-500">

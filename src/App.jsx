@@ -5,6 +5,7 @@ import CheckerLayout from './layouts/CheckerLayout.jsx'
 import LoginPage from './pages/LoginPage.jsx'
 import SupervisorLayout from './layouts/SupervisorLayout.jsx'
 import { getDefaultPathForRole, getRoutesForRole } from './routes/roleRoutes.jsx'
+import { normalizeRole } from './utils/roles.js'
 import {
   getCurrentSession,
   getProfileByUserId,
@@ -164,13 +165,13 @@ function App() {
     )
   }
 
-  const currentRole = currentUser?.role || 'checker'
+  const currentRole = normalizeRole(currentUser?.role)
   const availableRoutes = getRoutesForRole(currentRole)
   const defaultRoute = getDefaultPathForRole(currentRole)
   const RoleLayout =
     currentRole === 'admin'
       ? AdminLayout
-      : currentRole === 'supervisor'
+      : currentRole === 'viewer'
         ? SupervisorLayout
         : CheckerLayout
 

@@ -80,6 +80,7 @@ export async function getVessels() {
         start_discharge_date,
         status,
         created_by,
+        deleted_at,
         vessel_destinations (
           id,
           vessel_id,
@@ -92,6 +93,7 @@ export async function getVessels() {
         )
       `,
     )
+    .is('deleted_at', null)
     .order('id', { ascending: true })
 
   return {
@@ -497,6 +499,28 @@ export async function changeVesselStatus(vesselId, status) {
     .from('vessels')
     .update({ status })
     .eq('id', vesselId)
+    .select()
+    .single()
+
+  return {
+    data,
+    error,
+  }
+}
+
+export async function archiveVessel(vesselId) {
+  if (!supabase) {
+    return {
+      data: null,
+      error: getSupabaseRequiredError(),
+    }
+  }
+
+  const { data, error } = await supabase
+    .from('vessels')
+    .update({ deleted_at: new Date().toISOString() })
+    .eq('id', vesselId)
+    .is('deleted_at', null)
     .select()
     .single()
 

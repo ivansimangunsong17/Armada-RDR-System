@@ -12,8 +12,10 @@ import {
   formatTonnageInputFromNumber,
   parseTonnageInputToNumber,
 } from '../utils/tonnageInput.js'
+import { isViewerRole } from '../utils/roles.js'
 import {
   addDestinationToVessel,
+  archiveVessel,
   changeVesselStatus,
   createVessel,
   deactivateVesselDestination,
@@ -135,8 +137,9 @@ function getVesselDestinationRows(vessel, destinationMap = {}) {
   ]
 }
 
-function VesselDataPage({ appState }) {
+function VesselDataPage({ appState, readOnly = false }) {
   const { vessels, setVessels, setHatchCargo, currentUser } = appState
+  const isReadOnly = readOnly || isViewerRole(currentUser?.role)
   const [form, setForm] = useState(emptyForm)
   const [errors, setErrors] = useState({})
   const [destinationOptions, setDestinationOptions] = useState([])
@@ -147,6 +150,8 @@ function VesselDataPage({ appState }) {
   const [loadError, setLoadError] = useState('')
   const [isVesselReviewOpen, setIsVesselReviewOpen] = useState(false)
   const [pendingStatusChange, setPendingStatusChange] = useState(null)
+  const [pendingArchiveVessel, setPendingArchiveVessel] = useState(null)
+  const [isArchiving, setIsArchiving] = useState(false)
 
   const checkerLookup = useMemo(
     () => Object.fromEntries(checkers.map((item) => [item.id, item.full_name])),
@@ -367,6 +372,7 @@ function VesselDataPage({ appState }) {
 
   function handleSubmit(event) {
     event.preventDefault()
+    if (isReadOnly) return
     if (!validateForm()) return
     if (!currentUser) return
 
@@ -374,6 +380,7 @@ function VesselDataPage({ appState }) {
   }
 
   async function handleConfirmVesselSave() {
+    if (isReadOnly) return
     if (!currentUser) return
 
     setIsSubmitting(true)
@@ -542,6 +549,7 @@ function VesselDataPage({ appState }) {
   }
 
   function handleEdit(vessel) {
+    if (isReadOnly) return
     setEditingVessel(vessel)
     setForm({
       vesselName: vessel.vesselName || '',
@@ -575,6 +583,7 @@ function VesselDataPage({ appState }) {
   }
 
   function handleStatusChange(vessel, nextStatus) {
+    if (isReadOnly) return
     if (vessel.status === nextStatus) return
     setPendingStatusChange({
       vessel,
@@ -583,6 +592,7 @@ function VesselDataPage({ appState }) {
   }
 
   async function handleConfirmStatusChange() {
+    if (isReadOnly) return
     if (!pendingStatusChange) return
 
     setLoadError('')
@@ -607,6 +617,37 @@ function VesselDataPage({ appState }) {
         ),
     )
     setPendingStatusChange(null)
+  }
+
+  function handleArchiveClick(vessel) {
+    if (isReadOnly) return
+    setPendingArchiveVessel(vessel)
+    setLoadError('')
+  }
+
+  async function handleConfirmArchive() {
+    if (isReadOnly || !pendingArchiveVessel) return
+
+    setIsArchiving(true)
+    setLoadError('')
+
+    const result = await archiveVessel(pendingArchiveVessel.id)
+
+    if (result.error) {
+      setLoadError(`Gagal mengarchive vessel. ${result.error.message || ''}`.trim())
+      setIsArchiving(false)
+      return
+    }
+
+    setVessels((current) => current.filter((row) => row.id !== pendingArchiveVessel.id))
+    if (setHatchCargo) {
+      setHatchCargo((current) => current.filter((row) => row.vesselId !== pendingArchiveVessel.id))
+    }
+    if (editingVessel?.id === pendingArchiveVessel.id) {
+      handleCancelEdit()
+    }
+    setPendingArchiveVessel(null)
+    setIsArchiving(false)
   }
 
   const columns = [
@@ -647,11 +688,23 @@ function VesselDataPage({ appState }) {
       key: 'plan',
       label: 'Plan',
       render: (row) => (
-        <div>
+        <div className="min-w-56">
           <p className="font-bold text-slate-800">{row.totalHatch || 0} Hatch</p>
           <p className="mt-1 text-xs font-semibold text-slate-500">
             FSP {(row.hatchCargoRows || []).length || 0} row
           </p>
+          {isReadOnly && (
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {(row.hatchCargoRows || []).map((hatch) => (
+                <span
+                  className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-bold text-slate-700"
+                  key={hatch.id || hatch.hatchNo}
+                >
+                  {hatch.hatchLabel || `H${hatch.hatchNo}`}: {formatMT(hatch.initialCargo)}
+                </span>
+              ))}
+            </div>
+          )}
         </div>
       ),
     },
@@ -695,10 +748,20 @@ function VesselDataPage({ appState }) {
               </option>
             ))}
           </Select>
+          <Button
+            variant="secondary"
+            onClick={() => handleArchiveClick(row)}
+            className="w-full justify-center border-red-200 text-red-800 hover:bg-red-50"
+          >
+            Archive
+          </Button>
         </div>
       ),
     },
-  ]
+  ].filter((column) => {
+    if (!isReadOnly) return true
+    return !['assignedCheckerName', 'actions'].includes(column.key)
+  })
 
   const canCreate = checkers.length > 0
   const formTotalCargo = form.hatchCargoRows.reduce(
@@ -770,11 +833,30 @@ function VesselDataPage({ appState }) {
       <div>
         <h2 className="text-2xl font-bold text-slate-900">Cargo Information</h2>
         <p className="mt-1 text-sm text-slate-500">
-          Kelola informasi cargo, kapal, destination, FSP, dan checker assignment.
+          {isReadOnly
+            ? 'Lihat informasi cargo, kapal, destination, dan Final Stowage Plan secara read-only.'
+            : 'Kelola informasi cargo, kapal, destination, FSP, dan checker assignment.'}
         </p>
       </div>
 
-      {renderFormContainer(
+      {isReadOnly && (
+        <Card>
+          <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900">
+            <p className="font-extrabold">Mode read-only Report Viewer</p>
+            <p className="mt-1 font-semibold">
+              Data cargo information hanya bisa dilihat. Create, edit, assign, status change, dan deactivate destination tidak tersedia.
+            </p>
+          </div>
+        </Card>
+      )}
+
+      {isReadOnly && loadError && (
+        <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+          {loadError}
+        </div>
+      )}
+
+      {!isReadOnly && renderFormContainer(
         <>
         {editingVessel && (
           <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
@@ -1045,11 +1127,12 @@ function VesselDataPage({ appState }) {
           className="[&_tbody_tr]:align-top"
           columns={columns}
           data={vessels}
-          emptyMessage="Belum ada cargo information."
+          emptyMessage={isLoading ? 'Memuat cargo information...' : 'Belum ada cargo information.'}
           tableClassName="min-w-[1080px]"
         />
       </Card>
 
+      {!isReadOnly && (
       <Modal
         isOpen={isVesselReviewOpen}
         onClose={() => {
@@ -1112,7 +1195,9 @@ function VesselDataPage({ appState }) {
           </div>
         </div>
       </Modal>
+      )}
 
+      {!isReadOnly && (
       <Modal
         isOpen={Boolean(pendingStatusChange)}
         onClose={() => setPendingStatusChange(null)}
@@ -1161,6 +1246,55 @@ function VesselDataPage({ appState }) {
           </div>
         </div>
       </Modal>
+      )}
+
+      {!isReadOnly && (
+      <Modal
+        isOpen={Boolean(pendingArchiveVessel)}
+        onClose={() => {
+          if (!isArchiving) setPendingArchiveVessel(null)
+        }}
+        title="Archive Vessel"
+      >
+        <div className="grid gap-5">
+          <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+            <p className="font-extrabold">{pendingArchiveVessel?.vesselName || '-'}</p>
+            <p className="mt-1 font-semibold">
+              Vessel ini tidak akan dihapus permanen. Data hanya disembunyikan dari daftar aktif,
+              checker input, dashboard, dan report aktif.
+            </p>
+          </div>
+
+          <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
+            <p className="font-bold text-slate-950">Data historis tetap disimpan:</p>
+            <p className="mt-1">
+              Discharge entries, Final Stowage Plan, destination, checker assignment, dan data report
+              historis tidak dihapus.
+            </p>
+          </div>
+
+          <div className="flex flex-wrap justify-end gap-3 border-t border-slate-200 pt-4">
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => setPendingArchiveVessel(null)}
+              disabled={isArchiving}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              className="border-red-200 text-red-800 hover:bg-red-50"
+              onClick={handleConfirmArchive}
+              disabled={isArchiving}
+            >
+              {isArchiving ? 'Archiving...' : 'Confirm Archive'}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+      )}
     </div>
   )
 }

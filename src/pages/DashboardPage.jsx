@@ -60,6 +60,7 @@ function DashboardPage({ appState, dashboardTitle, dashboardDescription }) {
   const selectedRunningReport = runningRows.filter((row) => row.vesselId === selectedVessel?.id)
   const selectedSummary = buildSummary(selectedRunningReport)
   const lastUpdate = latestEntries.find((entry) => entry.vesselId === selectedVessel?.id)
+  const selectedStatus = String(selectedVessel?.status || '').toLowerCase()
 
   const summaryCards = [
     { label: 'Total Cargo', value: formatMT(fleetSummary.totalCargo), note: 'Semua kapal berjalan' },
@@ -262,11 +263,82 @@ function DashboardPage({ appState, dashboardTitle, dashboardDescription }) {
               </Select>
             </div>
 
-            <div className="mb-5 grid grid-cols-1 gap-3 rounded-lg bg-slate-100 p-4 text-sm text-slate-700 sm:grid-cols-2 xl:grid-cols-4">
-              <p><span className="font-bold text-slate-900">Company:</span> {selectedVessel?.company || '-'}</p>
-              <p><span className="font-bold text-slate-900">Cargo:</span> {selectedVessel?.cargo || '-'}</p>
-              <p><span className="font-bold text-slate-900">Destination:</span> {selectedVessel?.destination || '-'}</p>
-              <p><span className="font-bold text-slate-900">Progress:</span> {formatPercentage(selectedSummary.overallProgress)}</p>
+            <div className="mb-5 grid gap-4 rounded-lg border border-slate-200 bg-slate-50 p-4">
+              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                <div className="min-w-0">
+                  <p className="text-xs font-extrabold uppercase tracking-wide text-slate-500">
+                    Vessel Information
+                  </p>
+                  <h3 className="mt-1 break-words text-lg font-black text-slate-950">
+                    {selectedVessel?.vesselName || '-'}
+                  </h3>
+                  <p className="mt-1 text-sm font-semibold text-slate-500">
+                    Cargo owner: {selectedVessel?.company || '-'}
+                  </p>
+                </div>
+                <Badge variant={selectedStatus === 'active' ? 'active' : 'pending'}>
+                  {selectedVessel?.status || '-'}
+                </Badge>
+              </div>
+
+              <div className="grid grid-cols-1 gap-3 text-sm text-slate-700 sm:grid-cols-2 xl:grid-cols-4">
+                <div className="rounded-md bg-white p-3 shadow-sm ring-1 ring-slate-200">
+                  <p className="text-xs font-extrabold uppercase text-slate-500">Jenis Cargo</p>
+                  <p className="mt-1 font-bold text-slate-950">{selectedVessel?.cargo || '-'}</p>
+                </div>
+                <div className="rounded-md bg-white p-3 shadow-sm ring-1 ring-slate-200">
+                  <p className="text-xs font-extrabold uppercase text-slate-500">Destination</p>
+                  <p className="mt-1 font-bold text-slate-950">{selectedVessel?.destination || '-'}</p>
+                </div>
+                <div className="rounded-md bg-white p-3 shadow-sm ring-1 ring-slate-200">
+                  <p className="text-xs font-extrabold uppercase text-slate-500">Start Discharge</p>
+                  <p className="mt-1 font-bold text-slate-950">
+                    {selectedVessel?.startDate ? formatDate(selectedVessel.startDate) : '-'}
+                  </p>
+                </div>
+                <div className="rounded-md bg-white p-3 shadow-sm ring-1 ring-slate-200">
+                  <p className="text-xs font-extrabold uppercase text-slate-500">ETA</p>
+                  <p className="mt-1 font-bold text-slate-950">
+                    {selectedVessel?.eta ? formatDate(selectedVessel.eta) : '-'}
+                  </p>
+                </div>
+                <div className="rounded-md bg-white p-3 shadow-sm ring-1 ring-slate-200">
+                  <p className="text-xs font-extrabold uppercase text-slate-500">Total Hatch</p>
+                  <p className="mt-1 font-bold text-slate-950">{selectedVessel?.totalHatch || 0} Hatch</p>
+                </div>
+                <div className="rounded-md bg-white p-3 shadow-sm ring-1 ring-slate-200">
+                  <p className="text-xs font-extrabold uppercase text-slate-500">Total Cargo</p>
+                  <p className="mt-1 font-bold text-slate-950">{formatMT(selectedSummary.totalCargo)}</p>
+                </div>
+                <div className="rounded-md bg-white p-3 shadow-sm ring-1 ring-slate-200">
+                  <p className="text-xs font-extrabold uppercase text-slate-500">Discharge</p>
+                  <p className="mt-1 font-bold text-slate-950">{formatMT(selectedSummary.totalDischarge)}</p>
+                </div>
+                <div className="rounded-md bg-white p-3 shadow-sm ring-1 ring-slate-200">
+                  <p className="text-xs font-extrabold uppercase text-slate-500">Progress</p>
+                  <p className="mt-1 font-bold text-slate-950">{formatPercentage(selectedSummary.overallProgress)}</p>
+                </div>
+              </div>
+
+              <div>
+                <p className="mb-2 text-xs font-extrabold uppercase tracking-wide text-slate-500">
+                  Final Stowage Plan
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {selectedRunningReport.length === 0 ? (
+                    <span className="text-sm font-semibold text-slate-500">Data FSP belum tersedia.</span>
+                  ) : (
+                    selectedRunningReport.map((row) => (
+                      <span
+                        className="rounded-md border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700 shadow-sm"
+                        key={row.hatchCargoId || row.hatch}
+                      >
+                        {row.hatch}: {formatMT(row.finalStowage)}
+                      </span>
+                    ))
+                  )}
+                </div>
+              </div>
             </div>
 
             <div className="grid gap-3 md:hidden">

@@ -1,4 +1,5 @@
 import { supabase } from '../lib/supabaseClient.js'
+import { normalizeRole } from '../utils/roles.js'
 
 function getSupabaseRequiredError() {
   return new Error(
@@ -13,7 +14,8 @@ export function mapProfileToCurrentUser(profile, authUser) {
     email: profile.email || authUser?.email || '',
     username: profile.username || '',
     name: profile.full_name,
-    role: profile.role,
+    role: normalizeRole(profile.role),
+    sourceRole: profile.role,
     isActive: profile.is_active,
   }
 }

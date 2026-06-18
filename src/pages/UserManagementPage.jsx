@@ -7,15 +7,17 @@ import Modal from '../components/ui/Modal.jsx'
 import Select from '../components/ui/Select.jsx'
 import Table from '../components/ui/Table.jsx'
 import {
+  createUserProfile,
   getUserProfileMutationError,
   getUserProfiles,
   updateUserProfile,
 } from '../services/userService.js'
+import { normalizeRole } from '../utils/roles.js'
 
 const roleOptions = [
   { value: 'admin', label: 'Admin' },
   { value: 'checker', label: 'Checker' },
-  { value: 'supervisor', label: 'Supervisor' },
+  { value: 'viewer', label: 'Report Viewer' },
 ]
 
 function formatDateTime(value) {
@@ -40,7 +42,7 @@ function normalizeEmail(value) {
 }
 
 function getRoleLabel(role) {
-  return roleOptions.find((option) => option.value === role)?.label || role || '-'
+  return roleOptions.find((option) => option.value === normalizeRole(role))?.label || role || '-'
 }
 
 function createEditForm(user) {
@@ -48,8 +50,19 @@ function createEditForm(user) {
     fullName: user?.fullName || '',
     email: user?.email || '',
     username: user?.username || '',
-    role: user?.role || 'checker',
+    role: normalizeRole(user?.role || 'checker'),
     isActive: Boolean(user?.isActive),
+  }
+}
+
+function createNewUserForm() {
+  return {
+    fullName: '',
+    email: '',
+    username: '',
+    password: '',
+    role: 'checker',
+    isActive: true,
   }
 }
 
@@ -75,6 +88,21 @@ function getValidationIssues(form) {
   return issues
 }
 
+function getCreateValidationIssues(form) {
+  const issues = getValidationIssues(form)
+  const email = normalizeEmail(form.email || '')
+
+  if (!email) {
+    issues.push('Email wajib diisi untuk membuat Supabase Auth user.')
+  }
+
+  if (!form.password || form.password.length < 8) {
+    issues.push('Password minimal 8 karakter.')
+  }
+
+  return issues
+}
+
 function UserManagementPage({ appState }) {
   const { currentUser } = appState
   const currentUserId = getCurrentUserId(currentUser)
@@ -87,6 +115,14 @@ function UserManagementPage({ appState }) {
   const [editForm, setEditForm] = useState(createEditForm())
   const [validationIssues, setValidationIssues] = useState([])
   const [isReviewOpen, setIsReviewOpen] = useState(false)
+  const [searchTerm, setSearchTerm] = useState('')
+  const [roleFilter, setRoleFilter] = useState('all')
+  const [statusFilter, setStatusFilter] = useState('all')
+  const [isCreateOpen, setIsCreateOpen] = useState(false)
+  const [createForm, setCreateForm] = useState(createNewUserForm())
+  const [createValidationIssues, setCreateValidationIssues] = useState([])
+  const [isCreateReviewOpen, setIsCreateReviewOpen] = useState(false)
+  const [isCreating, setIsCreating] = useState(false)
 
   useEffect(() => {
     loadUsers()
@@ -130,6 +166,81 @@ function UserManagementPage({ appState }) {
     }))
   }
 
+  function openCreateModal() {
+    setCreateForm(createNewUserForm())
+    setCreateValidationIssues([])
+    setError('')
+    setSuccessMessage('')
+    setIsCreateOpen(true)
+  }
+
+  function closeCreateModal() {
+    if (isCreating) return
+    setIsCreateOpen(false)
+    setIsCreateReviewOpen(false)
+    setCreateForm(createNewUserForm())
+    setCreateValidationIssues([])
+  }
+
+  function updateCreateForm(field, value) {
+    setCreateValidationIssues([])
+    setCreateForm((current) => ({
+      ...current,
+      [field]: value,
+    }))
+  }
+
+  function handleCreateReview() {
+    const issues = getCreateValidationIssues(createForm)
+
+    if (issues.length > 0) {
+      setCreateValidationIssues(issues)
+      return
+    }
+
+    setCreateValidationIssues([])
+    setIsCreateReviewOpen(true)
+  }
+
+  async function handleConfirmCreate() {
+    const issues = getCreateValidationIssues(createForm)
+
+    if (issues.length > 0) {
+      setCreateValidationIssues(issues)
+      setIsCreateReviewOpen(false)
+      return
+    }
+
+    setIsCreating(true)
+    setError('')
+    setSuccessMessage('')
+
+    const result = await createUserProfile({
+      fullName: createForm.fullName.trim(),
+      email: normalizeEmail(createForm.email),
+      username: normalizeUsername(createForm.username || ''),
+      password: createForm.password,
+      role: createForm.role,
+      isActive: createForm.isActive,
+    })
+
+    if (result.error || !result.user) {
+      const friendlyError = getUserProfileMutationError(result.error)
+      setCreateValidationIssues([friendlyError?.message || 'Gagal membuat user baru.'])
+      setIsCreating(false)
+      setIsCreateReviewOpen(false)
+      return
+    }
+
+    setUsers((current) => [result.user, ...current])
+    setSuccessMessage('User baru berhasil dibuat.')
+    setIsCreating(false)
+    setIsCreateOpen(false)
+    setIsCreateReviewOpen(false)
+    setCreateForm(createNewUserForm())
+    setCreateValidationIssues([])
+  }
+
   function handleSave() {
     if (!editingUser) return
 
@@ -158,7 +269,7 @@ function UserManagementPage({ appState }) {
       fullName: editForm.fullName.trim(),
       email,
       username,
-      role: editForm.role,
+      role: editingUser.id === currentUserId ? editingUser.role : editForm.role,
       isActive: editingUser.id === currentUserId ? editingUser.isActive : editForm.isActive,
     })
 
@@ -177,7 +288,7 @@ function UserManagementPage({ appState }) {
               fullName: result.user?.fullName || editForm.fullName.trim(),
               email: result.user?.email ?? email,
               username: result.user?.username ?? username,
-              role: result.user?.role || editForm.role,
+              role: result.user?.role || (editingUser.id === currentUserId ? editingUser.role : editForm.role),
               isActive: result.user?.isActive ?? editForm.isActive,
             }
           : item,
@@ -193,7 +304,11 @@ function UserManagementPage({ appState }) {
         ['Full Name', editingUser.fullName || '-', editForm.fullName.trim() || '-'],
         ['Email', editingUser.email || '-', normalizeEmail(editForm.email || '') || '-'],
         ['Username', editingUser.username || '-', normalizeUsername(editForm.username || '') || '-'],
-        ['Role', getRoleLabel(editingUser.role), getRoleLabel(editForm.role)],
+        [
+          'Role',
+          getRoleLabel(editingUser.role),
+          getRoleLabel(editingUser.id === currentUserId ? editingUser.role : editForm.role),
+        ],
         [
           'Status',
           editingUser.isActive ? 'Active' : 'Inactive',
@@ -264,6 +379,46 @@ function UserManagementPage({ appState }) {
 
   const isCurrentEditingUser = editingUser?.id === currentUserId
   const isSavingCurrentUser = savingUserId === editingUser?.id
+  const createReviewRows = [
+    ['Full Name', createForm.fullName.trim() || '-'],
+    ['Email', normalizeEmail(createForm.email || '') || '-'],
+    ['Username', normalizeUsername(createForm.username || '') || '-'],
+    ['Role', getRoleLabel(createForm.role)],
+    ['Status', createForm.isActive ? 'Active' : 'Inactive'],
+  ]
+  const normalizedSearchTerm = searchTerm.trim().toLowerCase()
+  const visibleUsers = useMemo(
+    () =>
+      users.filter((user) => {
+        const matchesSearch =
+          !normalizedSearchTerm ||
+          [user.fullName, user.email, user.username]
+            .filter(Boolean)
+            .some((value) => value.toLowerCase().includes(normalizedSearchTerm))
+        const matchesRole = roleFilter === 'all' || user.role === roleFilter
+        const matchesStatus =
+          statusFilter === 'all' ||
+          (statusFilter === 'active' ? user.isActive : !user.isActive)
+
+        return matchesSearch && matchesRole && matchesStatus
+      }),
+    [normalizedSearchTerm, roleFilter, statusFilter, users],
+  )
+  const userSummary = useMemo(
+    () =>
+      users.reduce(
+        (summary, user) => {
+          summary.total += 1
+          summary[user.isActive ? 'active' : 'inactive'] += 1
+          if (user.role === 'admin') summary.admin += 1
+          if (user.role === 'checker') summary.checker += 1
+          if (user.role === 'viewer') summary.viewer += 1
+          return summary
+        },
+        { total: 0, active: 0, inactive: 0, admin: 0, checker: 0, viewer: 0 },
+      ),
+    [users],
+  )
 
   return (
     <div className="grid gap-6">
@@ -277,8 +432,8 @@ function UserManagementPage({ appState }) {
       <Card>
         <div className="grid gap-3 text-sm text-slate-600">
           <p>
-            Step 1 hanya mengelola profile user yang sudah ada. Pembuatan user baru nanti
-            dilakukan melalui Edge Function.
+            Admin dapat membuat user baru melalui Supabase Edge Function dan mengelola profile
+            user yang sudah ada.
           </p>
           <p>
             Username dipakai untuk login lapangan. Email tetap disimpan di profile sebagai fallback
@@ -286,6 +441,21 @@ function UserManagementPage({ appState }) {
           </p>
         </div>
       </Card>
+
+      <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
+        {[
+          ['Total User', userSummary.total],
+          ['Active', userSummary.active],
+          ['Inactive', userSummary.inactive],
+          ['Checker', userSummary.checker],
+          ['Report Viewer', userSummary.viewer],
+        ].map(([label, value]) => (
+          <Card key={label} className="min-w-0">
+            <p className="text-xs font-bold uppercase text-slate-500">{label}</p>
+            <strong className="mt-2 block text-2xl font-black text-slate-950">{value}</strong>
+          </Card>
+        ))}
+      </section>
 
       {error && (
         <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-700">
@@ -301,16 +471,52 @@ function UserManagementPage({ appState }) {
 
       <Card
         title="Daftar User"
-        subtitle="Admin dapat mengubah profile user melalui modal validasi tanpa membuat user baru."
+        subtitle="Admin dapat membuat user baru dan mengubah profile user melalui modal validasi."
       >
+        <div className="mb-4 grid gap-3 border-b border-slate-100 pb-4 lg:grid-cols-[1fr_180px_180px_auto_auto] lg:items-end">
+          <Input
+            label="Cari User"
+            placeholder="Nama, email, atau username"
+            value={searchTerm}
+            onChange={(event) => setSearchTerm(event.target.value)}
+          />
+          <Select
+            label="Role"
+            value={roleFilter}
+            onChange={(event) => setRoleFilter(event.target.value)}
+          >
+            <option value="all">Semua role</option>
+            {roleOptions.map((role) => (
+              <option key={role.value} value={role.value}>
+                {role.label}
+              </option>
+            ))}
+          </Select>
+          <Select
+            label="Status"
+            value={statusFilter}
+            onChange={(event) => setStatusFilter(event.target.value)}
+          >
+            <option value="all">Semua status</option>
+            <option value="active">Active</option>
+            <option value="inactive">Inactive</option>
+          </Select>
+          <Button type="button" variant="secondary" onClick={loadUsers} disabled={isLoading}>
+            {isLoading ? 'Refreshing...' : 'Refresh'}
+          </Button>
+          <Button type="button" onClick={openCreateModal}>
+            Tambah User
+          </Button>
+        </div>
+
         {isLoading ? (
           <p className="text-sm text-slate-500">Memuat daftar user...</p>
         ) : (
           <Table
             className="[&_tbody_tr]:align-top"
             columns={columns}
-            data={users}
-            emptyMessage="Belum ada user di tabel profiles."
+            data={visibleUsers}
+            emptyMessage="Tidak ada user yang sesuai filter."
             tableClassName="min-w-[860px]"
           />
         )}
@@ -364,6 +570,7 @@ function UserManagementPage({ appState }) {
             />
             <Select
               label="Role"
+              disabled={isCurrentEditingUser}
               value={editForm.role}
               onChange={(event) => updateEditForm('role', event.target.value)}
             >
@@ -373,6 +580,11 @@ function UserManagementPage({ appState }) {
                 </option>
               ))}
             </Select>
+            {isCurrentEditingUser && (
+              <p className="text-sm font-semibold text-slate-500 md:col-span-2">
+                Current user tidak bisa mengubah role akunnya sendiri.
+              </p>
+            )}
             <div className="md:col-span-2">
               <Select
                 label="Status Aktif"
@@ -399,6 +611,134 @@ function UserManagementPage({ appState }) {
             </Button>
             <Button type="button" variant="success" disabled={isSavingCurrentUser} onClick={handleSave}>
               {isSavingCurrentUser ? 'Saving...' : 'Review Changes'}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal
+        isOpen={isCreateOpen}
+        onClose={closeCreateModal}
+        title="Tambah User Baru"
+      >
+        <div className="grid gap-5">
+          <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900">
+            <p className="font-extrabold">Create user via Edge Function</p>
+            <p className="mt-1 font-semibold">
+              User dibuat di Supabase Auth, lalu profile dibuat di tabel profiles.
+            </p>
+          </div>
+
+          {createValidationIssues.length > 0 && (
+            <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-700">
+              <p className="mb-2 font-extrabold">Validasi belum lolos</p>
+              <ul className="grid gap-1">
+                {createValidationIssues.map((issue) => (
+                  <li key={issue}>{issue}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <Input
+              label="Full Name"
+              value={createForm.fullName}
+              onChange={(event) => updateCreateForm('fullName', event.target.value)}
+            />
+            <Input
+              label="Email"
+              type="email"
+              value={createForm.email}
+              onChange={(event) => updateCreateForm('email', event.target.value)}
+            />
+            <Input
+              label="Username"
+              placeholder="checker.ops"
+              value={createForm.username}
+              onBlur={(event) => updateCreateForm('username', normalizeUsername(event.target.value))}
+              onChange={(event) => updateCreateForm('username', event.target.value)}
+            />
+            <Input
+              label="Password"
+              type="password"
+              value={createForm.password}
+              onChange={(event) => updateCreateForm('password', event.target.value)}
+            />
+            <Select
+              label="Role"
+              value={createForm.role}
+              onChange={(event) => updateCreateForm('role', event.target.value)}
+            >
+              {roleOptions.map((role) => (
+                <option key={role.value} value={role.value}>
+                  {role.label}
+                </option>
+              ))}
+            </Select>
+            <Select
+              label="Status Aktif"
+              value={createForm.isActive ? 'active' : 'inactive'}
+              onChange={(event) =>
+                updateCreateForm('isActive', event.target.value === 'active')
+              }
+            >
+              <option value="active">Active</option>
+              <option value="inactive">Inactive</option>
+            </Select>
+          </div>
+
+          <div className="flex flex-wrap justify-end gap-3 border-t border-slate-200 pt-4">
+            <Button type="button" variant="secondary" onClick={closeCreateModal}>
+              Cancel
+            </Button>
+            <Button type="button" variant="success" disabled={isCreating} onClick={handleCreateReview}>
+              {isCreating ? 'Creating...' : 'Review User'}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal
+        isOpen={isCreateReviewOpen}
+        onClose={() => {
+          if (!isCreating) setIsCreateReviewOpen(false)
+        }}
+        title="Validasi User Baru"
+      >
+        <div className="grid gap-5">
+          <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">
+            <p className="font-extrabold">Validasi lolos</p>
+            <p className="mt-1 font-semibold">
+              Periksa user baru sebelum dibuat di Supabase Auth.
+            </p>
+          </div>
+
+          <div className="overflow-x-auto rounded-lg border border-slate-200">
+            <table className="min-w-full text-sm">
+              <thead className="bg-slate-100 text-left text-xs uppercase text-slate-600">
+                <tr>
+                  <th className="px-4 py-3 font-extrabold">Field</th>
+                  <th className="px-4 py-3 font-extrabold">Value</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {createReviewRows.map(([field, value]) => (
+                  <tr key={field}>
+                    <td className="px-4 py-3 font-bold text-slate-900">{field}</td>
+                    <td className="px-4 py-3 font-semibold text-slate-900">{value}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="flex flex-wrap justify-end gap-3 border-t border-slate-200 pt-4">
+            <Button type="button" variant="secondary" onClick={() => setIsCreateReviewOpen(false)}>
+              Kembali Edit
+            </Button>
+            <Button type="button" variant="success" disabled={isCreating} onClick={handleConfirmCreate}>
+              {isCreating ? 'Creating...' : 'Confirm Create'}
             </Button>
           </div>
         </div>

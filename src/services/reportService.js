@@ -12,6 +12,15 @@ function safeNumber(value) {
 
 function mapVessel(row) {
   const destination = row.destinations || {}
+  const destinationRows = (row.vessel_destinations || []).map((item) => ({
+    destinationId: item.destination_id,
+    name: item.destinations?.name || '-',
+    isActive: item.is_active !== false,
+  }))
+  const activeDestinationRows = destinationRows.filter((item) => item.isActive)
+  const destinationLabel = activeDestinationRows.length > 0
+    ? activeDestinationRows.map((item) => item.name).filter(Boolean).join(', ')
+    : destination.name || '-'
 
   return {
     id: row.id,
@@ -19,11 +28,13 @@ function mapVessel(row) {
     company: row.cargo_owner,
     cargo: row.cargo_type,
     destinationId: row.destination_id,
-    destination: destination.name || '-',
+    destination: destinationLabel,
+    destinations: destinationRows,
     totalHatch: row.total_hatch,
     eta: row.eta,
     startDate: row.start_discharge_date,
     status: row.status,
+    deletedAt: row.deleted_at || '',
   }
 }
 
@@ -297,9 +308,19 @@ export async function getActiveVesselsForReports(currentUser) {
             eta,
             start_discharge_date,
             status,
+            deleted_at,
             destinations (
               id,
               name
+            ),
+            vessel_destinations (
+              id,
+              destination_id,
+              is_active,
+              destinations (
+                id,
+                name
+              )
             )
           )
         `,
@@ -309,7 +330,7 @@ export async function getActiveVesselsForReports(currentUser) {
 
     return {
       data: (data || [])
-        .filter((row) => row.vessels && row.vessels.status !== 'completed')
+        .filter((row) => row.vessels && !row.vessels.deleted_at && row.vessels.status !== 'completed')
         .map((row) => mapVessel(row.vessels)),
       error,
     }
@@ -328,12 +349,23 @@ export async function getActiveVesselsForReports(currentUser) {
         eta,
         start_discharge_date,
         status,
+        deleted_at,
         destinations (
           id,
           name
+        ),
+        vessel_destinations (
+          id,
+          destination_id,
+          is_active,
+          destinations (
+            id,
+            name
+          )
         )
       `,
     )
+    .is('deleted_at', null)
     .neq('status', 'completed')
     .order('start_discharge_date', { ascending: false })
 

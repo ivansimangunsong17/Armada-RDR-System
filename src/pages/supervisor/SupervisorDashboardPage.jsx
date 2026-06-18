@@ -4,8 +4,8 @@ function SupervisorDashboardPage({ appState }) {
   return (
     <DashboardPage
       appState={appState}
-      dashboardTitle="Supervisor Dashboard"
-      dashboardDescription="Monitoring progress discharge semua kapal aktif untuk kebutuhan pengawasan."
+      dashboardTitle="Report Viewer Dashboard"
+      dashboardDescription="Monitoring read-only progress discharge semua kapal aktif untuk kebutuhan report."
     />
   )
 }

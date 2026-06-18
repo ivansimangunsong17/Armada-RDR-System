@@ -1,14 +1,9 @@
 import { FaBars } from 'react-icons/fa'
-
-const roleLabels = {
-  admin: 'Admin Workspace',
-  checker: 'Checker Workspace',
-  supervisor: 'Supervisor Workspace',
-}
+import { getRoleLabel, getWorkspaceLabel } from '../../utils/roles.js'
 
 function Header({ currentUser, layoutRole, onLogout, onOpenMobileMenu }) {
   const displayName = currentUser?.name || 'User Dummy'
-  const displayRole = currentUser?.role || 'user'
+  const displayRole = getRoleLabel(currentUser?.role)
 
   return (
     <header className="sticky top-0 z-20 border-b border-slate-200 bg-white/95 px-4 py-3 shadow-sm shadow-slate-200/70 backdrop-blur sm:px-6 sm:py-4 lg:px-8">
@@ -25,7 +20,7 @@ function Header({ currentUser, layoutRole, onLogout, onOpenMobileMenu }) {
           </button>
           <div className="min-w-0">
           <p className="text-xs font-bold uppercase tracking-wide text-red-800">
-            {roleLabels[layoutRole] || 'Operation Dashboard'}
+            {getWorkspaceLabel(layoutRole)}
           </p>
           <h1 className="mt-1 text-lg font-extrabold text-slate-950 sm:text-2xl">
             Running Discharge Report System
@@ -39,7 +34,7 @@ function Header({ currentUser, layoutRole, onLogout, onOpenMobileMenu }) {
             <span className="text-slate-700">{displayName}</span>
             <span className="mx-2 text-slate-300">|</span>
             <span className="font-semibold text-slate-900">Role:</span>{' '}
-            <span className="text-slate-700 capitalize">{displayRole}</span>
+            <span className="text-slate-700">{displayRole}</span>
           </div>
 
           <button

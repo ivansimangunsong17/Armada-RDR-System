@@ -1,4 +1,5 @@
 import { supabase } from '../lib/supabaseClient.js'
+import { normalizeRole } from '../utils/roles.js'
 
 function getSupabaseRequiredError() {
   return new Error(
@@ -12,7 +13,7 @@ function mapProfile(row = {}) {
     fullName: row.full_name || '',
     email: row.email || '',
     username: row.username || '',
-    role: row.role || 'checker',
+    role: normalizeRole(row.role || 'checker'),
     isActive: Boolean(row.is_active),
     createdAt: row.created_at || '',
   }
@@ -34,6 +35,24 @@ export async function getUserProfiles() {
   return {
     users: (data || []).map(mapProfile),
     error,
+  }
+}
+
+export async function createUserProfile(payload) {
+  if (!supabase) {
+    return {
+      user: null,
+      error: getSupabaseRequiredError(),
+    }
+  }
+
+  const { data, error } = await supabase.functions.invoke('create-user', {
+    body: payload,
+  })
+
+  return {
+    user: data?.user ? mapProfile(data.user) : null,
+    error: error || (data?.error ? new Error(data.error) : null),
   }
 }
 
@@ -83,6 +102,10 @@ export function getUserProfileMutationError(error) {
 
   if (error.code === '23514' && (error.message || '').includes('username')) {
     return new Error('Format username tidak valid.')
+  }
+
+  if (error.message) {
+    return new Error(error.message)
   }
 
   return error

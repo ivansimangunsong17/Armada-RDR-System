@@ -14,6 +14,7 @@ import { exportPeriodReportExcel } from '../services/excelExportService.js'
 import { exportPeriodReportPDF } from '../services/pdfExportService.js'
 import { formatMT, formatPercentage, formatTruck } from '../utils/formatters.js'
 import Button from '../components/ui/Button.jsx'
+import { normalizeRole } from '../utils/roles.js'
 
 const periods = [
   { label: '00:00-02:00', startHour: 0, endHour: 2 },
@@ -41,7 +42,7 @@ const emptyRunningPosition = {
 }
 
 function getReportLinks(role) {
-  const basePath = role === 'admin' ? '/admin' : '/supervisor'
+  const basePath = normalizeRole(role) === 'admin' ? '/admin' : '/viewer'
 
   return [
     { to: `${basePath}/running-report`, label: 'Running Report' },
@@ -246,7 +247,7 @@ function PeriodReportPage({ appState }) {
       <div className="flex flex-col gap-4 rounded-lg border border-slate-200 bg-white p-4 shadow-sm shadow-slate-200/70 xl:flex-row xl:items-center xl:justify-between">
         <div className="min-w-0">
           <p className="text-xs font-extrabold uppercase tracking-wide text-red-800">
-            Supervisor Report
+            Report Viewer
           </p>
           <h2 className="mt-1 text-2xl font-black text-slate-950">Report 2 Jam</h2>
           <p className="mt-1 text-sm text-slate-500">
@@ -360,14 +361,22 @@ function PeriodReportPage({ appState }) {
             <ReportLoadingState message="Memuat report 2 jam..." />
           ) : (
             <>
-              <section>
-                <div className="mb-3">
-                  <h3 className="text-base font-extrabold text-slate-900">
-                    Running Position Until End Period
-                  </h3>
-                  <p className="mt-1 text-sm text-slate-500">
-                    Posisi kumulatif sampai akhir periode {selectedPeriod?.label || '-'}.
-                  </p>
+              <section className="rounded-xl border border-slate-200 bg-slate-50/70 p-4 shadow-sm">
+                <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <p className="text-[11px] font-extrabold uppercase tracking-wide text-slate-500">
+                      Cumulative Position
+                    </p>
+                    <h3 className="mt-1 text-base font-extrabold text-slate-950">
+                      Running Position Until End Period
+                    </h3>
+                    <p className="mt-1 text-sm text-slate-500">
+                      Posisi kumulatif sampai akhir periode {selectedPeriod?.label || '-'}.
+                    </p>
+                  </div>
+                  <span className="inline-flex w-fit items-center rounded-full border border-slate-300 bg-white px-3 py-1 text-xs font-extrabold uppercase tracking-wide text-slate-600">
+                    Akumulasi Vessel
+                  </span>
                 </div>
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-6">
                   <div className="min-w-0 rounded-lg border border-slate-200 bg-white px-4 py-3">
@@ -421,36 +430,44 @@ function PeriodReportPage({ appState }) {
                 </div>
               </section>
 
-              <section className="mt-6 border-t border-slate-100 pt-6">
-                <div className="mb-3">
-                  <h3 className="text-base font-extrabold text-slate-900">Period Production</h3>
-                  <p className="mt-1 text-sm text-slate-500">
-                    Produksi khusus dalam boundary {selectedPeriod?.label || '-'}.
-                  </p>
+              <section className="mt-6 rounded-xl border border-red-200 bg-red-50/50 p-4 shadow-sm">
+                <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <p className="text-[11px] font-extrabold uppercase tracking-wide text-red-700">
+                      Active Two-Hour Window
+                    </p>
+                    <h3 className="mt-1 text-base font-extrabold text-slate-950">Period Production</h3>
+                    <p className="mt-1 text-sm text-red-900/70">
+                      Produksi khusus dalam boundary {selectedPeriod?.label || '-'}.
+                    </p>
+                  </div>
+                  <span className="inline-flex w-fit items-center rounded-full border border-red-200 bg-white px-3 py-1 text-xs font-extrabold uppercase tracking-wide text-red-800">
+                    Periode Ini
+                  </span>
                 </div>
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                  <div className="min-w-0 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
-                    <p className="text-[11px] font-extrabold uppercase tracking-wide text-slate-500">Total Discharge Periode</p>
-                    <p className="mt-2 break-words text-lg font-black text-slate-950 sm:text-xl">
+                  <div className="min-w-0 rounded-lg border border-red-200 bg-white px-4 py-3 shadow-sm">
+                    <p className="text-[11px] font-extrabold uppercase tracking-wide text-red-700">Total Discharge Periode</p>
+                    <p className="mt-2 break-words text-lg font-black text-red-950 sm:text-xl">
                       {formatMT(summary.totalDischarge)}
                     </p>
                   </div>
-                  <div className="min-w-0 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
-                    <p className="text-[11px] font-extrabold uppercase tracking-wide text-slate-500">Total Truck Periode</p>
-                    <p className="mt-2 break-words text-lg font-black text-slate-950 sm:text-xl">
+                  <div className="min-w-0 rounded-lg border border-red-200 bg-white px-4 py-3 shadow-sm">
+                    <p className="text-[11px] font-extrabold uppercase tracking-wide text-red-700">Total Truck Periode</p>
+                    <p className="mt-2 break-words text-lg font-black text-red-950 sm:text-xl">
                       {formatTruck(summary.totalTruck)}
                     </p>
                   </div>
-                  <div className="min-w-0 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
-                    <p className="text-[11px] font-extrabold uppercase tracking-wide text-slate-500">Average Periode</p>
-                    <p className="mt-2 break-words text-lg font-black text-slate-950 sm:text-xl">
+                  <div className="min-w-0 rounded-lg border border-red-200 bg-white px-4 py-3 shadow-sm">
+                    <p className="text-[11px] font-extrabold uppercase tracking-wide text-red-700">Average Periode</p>
+                    <p className="mt-2 break-words text-lg font-black text-red-950 sm:text-xl">
                       {formatMT(summary.averageTonnage)}
                     </p>
                   </div>
                 </div>
 
                 <div className="mt-5">
-                  <h4 className="mb-3 text-sm font-extrabold uppercase tracking-wide text-slate-600">
+                  <h4 className="mb-3 text-sm font-extrabold uppercase tracking-wide text-red-800">
                     Breakdown Per Hatch
                   </h4>
                   <Table

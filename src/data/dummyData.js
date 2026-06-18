@@ -55,10 +55,10 @@ export const users = [
   },
   {
     id: 'spv-001',
-    name: 'Supervisor Jetty',
-    username: 'supervisor',
-    role: 'supervisor',
-    password: 'supervisor123',
+    name: 'Report Viewer',
+    username: 'viewer',
+    role: 'viewer',
+    password: 'viewer123',
   },
 ]
 

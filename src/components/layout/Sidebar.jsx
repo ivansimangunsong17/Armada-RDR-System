@@ -2,9 +2,10 @@ import { NavLink } from 'react-router-dom'
 import { FaTimes } from 'react-icons/fa'
 import { getRoutesForRole } from '../../routes/roleRoutes.jsx'
 import bgLogoArmada from '../../assets/BGLogoArmada.png'
+import { getRoleLabel, normalizeRole } from '../../utils/roles.js'
 
 function Sidebar({ currentUser, isMobileMenuOpen = false, layoutRole, onCloseMobileMenu }) {
-  const currentRole = layoutRole || currentUser?.role || 'checker'
+  const currentRole = normalizeRole(layoutRole || currentUser?.role)
   const visibleMenuItems = getRoutesForRole(currentRole).filter((item) => !item.hidden)
 
   return (
@@ -94,7 +95,7 @@ function Sidebar({ currentUser, isMobileMenuOpen = false, layoutRole, onCloseMob
 
         <div className="shrink-0 border-t border-white/10 px-4 py-4 text-xs text-red-100/70">
           <p className="font-bold text-white">{currentUser?.name || 'User'}</p>
-          <p className="mt-1 capitalize text-red-100/70">{currentRole} workspace</p>
+          <p className="mt-1 text-red-100/70">{getRoleLabel(currentRole)} workspace</p>
         </div>
       </div>
     </aside>

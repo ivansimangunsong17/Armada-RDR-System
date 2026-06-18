@@ -23,6 +23,7 @@ import StowagePlanPage from '../pages/StowagePlanPage.jsx'
 import UserManagementPage from '../pages/UserManagementPage.jsx'
 import VesselDataPage from '../pages/VesselDataPage.jsx'
 import PlaceholderPage from '../pages/PlaceholderPage.jsx'
+import { normalizeRole } from '../utils/roles.js'
 
 export const roleRoutes = {
   admin: [
@@ -130,29 +131,71 @@ export const roleRoutes = {
       element: (appState) => <RunningReportPage appState={appState} />,
     },
   ],
-  supervisor: [
+  viewer: [
     {
-      path: '/supervisor/dashboard',
+      path: '/viewer/dashboard',
       label: 'Dashboard',
       icon: FaChartLine,
       element: (appState) => <SupervisorDashboardPage appState={appState} />,
     },
     {
+      path: '/viewer/vessels',
+      label: 'Cargo Information',
+      icon: FaShip,
+      hidden: true,
+      element: (appState) => <VesselDataPage appState={appState} readOnly />,
+    },
+    {
+      path: '/viewer/running-report',
+      label: 'Report',
+      icon: FaFileAlt,
+      element: (appState) => <RunningReportPage appState={appState} />,
+    },
+    {
+      path: '/viewer/period-report',
+      label: 'Report 2 Jam',
+      icon: FaClock,
+      element: (appState) => <PeriodReportPage appState={appState} />,
+    },
+    {
+      path: '/viewer/shift-report',
+      label: 'Report Shift',
+      icon: FaClock,
+      element: (appState) => <ShiftReportPage appState={appState} />,
+    },
+    {
+      path: '/supervisor/dashboard',
+      label: 'Dashboard',
+      icon: FaChartLine,
+      hidden: true,
+      element: (appState) => <SupervisorDashboardPage appState={appState} />,
+    },
+    {
+      path: '/supervisor/vessels',
+      label: 'Cargo Information',
+      icon: FaShip,
+      hidden: true,
+      element: (appState) => <VesselDataPage appState={appState} readOnly />,
+    },
+    {
       path: '/supervisor/running-report',
       label: 'Report',
       icon: FaFileAlt,
+      hidden: true,
       element: (appState) => <RunningReportPage appState={appState} />,
     },
     {
       path: '/supervisor/period-report',
       label: 'Report 2 Jam',
       icon: FaClock,
+      hidden: true,
       element: (appState) => <PeriodReportPage appState={appState} />,
     },
     {
       path: '/supervisor/shift-report',
       label: 'Report Shift',
       icon: FaClock,
+      hidden: true,
       element: (appState) => <ShiftReportPage appState={appState} />,
     },
     {
@@ -163,7 +206,7 @@ export const roleRoutes = {
       element: () => (
         <PlaceholderPage
           title="Report Logs"
-          description="Supervisor nantinya melihat histori report dan aktivitas perubahan data."
+          description="Report Viewer nantinya melihat histori report dan aktivitas perubahan data."
         />
       ),
     },
@@ -171,7 +214,8 @@ export const roleRoutes = {
 }
 
 export function getRoutesForRole(role) {
-  return roleRoutes[role] || roleRoutes.checker
+  const normalizedRole = normalizeRole(role)
+  return roleRoutes[normalizedRole] || roleRoutes.checker
 }
 
 export function getDefaultPathForRole(role) {

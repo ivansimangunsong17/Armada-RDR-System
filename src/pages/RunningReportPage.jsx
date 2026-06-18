@@ -13,6 +13,7 @@ import {
 import { exportRunningReportExcel } from '../services/excelExportService.js'
 import { exportRunningReportPDF, printRunningReportPDF } from '../services/pdfExportService.js'
 import { formatDate, formatPercentage, formatTruck } from '../utils/formatters.js'
+import { normalizeRole } from '../utils/roles.js'
 
 function formatManagementNumber(value) {
   const numericValue = Number(value) || 0
@@ -230,16 +231,17 @@ function RunningReportPage({ appState }) {
     })
   }
 
+  const normalizedRole = normalizeRole(currentUser?.role)
   const secondaryReportLinks =
-    currentUser?.role === 'admin'
+    normalizedRole === 'admin'
       ? [
           { to: '/admin/shift-report', label: 'Report Shift' },
           { to: '/admin/period-report', label: 'Report 2 Jam' },
         ]
-      : currentUser?.role === 'supervisor'
+      : normalizedRole === 'viewer'
         ? [
-            { to: '/supervisor/shift-report', label: 'Report Shift' },
-            { to: '/supervisor/period-report', label: 'Report 2 Jam' },
+            { to: '/viewer/shift-report', label: 'Report Shift' },
+            { to: '/viewer/period-report', label: 'Report 2 Jam' },
           ]
         : []
 

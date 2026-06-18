@@ -10,7 +10,7 @@ Role yang tersedia:
 
 - Admin: mengelola cargo information, final stowage plan, checker assignment, input monitoring, report, dan user management.
 - Checker: input data truck, upload foto barcode, melihat riwayat input, mengedit input, dan melihat running report vessel yang ditugaskan.
-- Supervisor: melihat dashboard dan report.
+- Report Viewer: melihat dashboard, informasi vessel/cargo read-only di dashboard, dan report.
 
 ## Dokumentasi Fitur
 
@@ -37,7 +37,8 @@ Fitur:
 
 - Admin diarahkan ke `/admin/dashboard`.
 - Checker diarahkan ke `/checker/dashboard`.
-- Supervisor diarahkan ke `/supervisor/dashboard`.
+- Report Viewer diarahkan ke `/viewer/dashboard`.
+- Role legacy `supervisor` sementara diperlakukan sebagai `viewer`.
 - Menu berbeda sesuai role.
 - Route yang tidak sesuai akan diarahkan ke default route role aktif.
 
@@ -56,7 +57,7 @@ Menu utama Checker:
 - Riwayat Input
 - Running Report
 
-Menu utama Supervisor:
+Menu utama Report Viewer:
 
 - Dashboard
 - Report
@@ -71,11 +72,12 @@ Fitur:
 - Menampilkan progress gabungan vessel.
 - Menampilkan progress tiap kapal.
 - Menampilkan detail per hatch untuk kapal yang dipilih.
+- Menampilkan informasi vessel/cargo read-only pada detail kapal, termasuk cargo owner, jenis cargo, destination, total hatch, status, dan Final Stowage Plan.
 - Menampilkan update discharge terakhir.
 
 Aturan:
 
-- Admin dan supervisor melihat vessel sesuai akses report.
+- Admin dan report viewer melihat vessel sesuai akses report.
 - Checker melihat vessel yang ditugaskan.
 - Jika data belum tersedia, sistem menampilkan empty state.
 
@@ -92,6 +94,7 @@ Fitur:
 - Total cargo dihitung otomatis dari jumlah initial cargo semua hatch.
 - Sebelum simpan, sistem menampilkan modal validasi/review perubahan.
 - Status vessel dapat diubah dengan modal konfirmasi.
+- Admin dapat mengarchive vessel dengan soft delete. Vessel yang diarchive disembunyikan dari daftar aktif, input checker, dashboard, dan report aktif, tetapi data historis tetap tersimpan.
 
 Aturan:
 
@@ -105,6 +108,7 @@ Aturan:
 - Initial cargo per hatch wajib diisi dan tidak boleh minus.
 - Status tersedia: Pending, Active, Completed.
 - Vessel Completed tidak dipakai sebagai input aktif checker.
+- Archive vessel tidak menghapus permanen data vessel, discharge entries, hatch cargo, destination, atau checker assignment.
 
 ### 5. Final Stowage Plan
 
@@ -207,7 +211,7 @@ Aturan:
 Fitur:
 
 - Menampilkan report progress discharge per vessel.
-- Admin dan supervisor dapat memilih vessel.
+- Admin dan report viewer dapat memilih vessel.
 - Checker melihat running report vessel assignment.
 - Report menyimpan pilihan vessel terakhir di browser.
 - Menampilkan summary: total cargo, total discharge, remaining cargo, progress, total truck, average load.
@@ -217,7 +221,7 @@ Fitur:
 - Menampilkan additional calculation.
 - Menampilkan destination summary berdasarkan destination per truck.
 - Mendukung Export Excel, Export PDF, dan Print.
-- Admin dan supervisor mendapat link ke Report Shift dan Report 2 Jam.
+- Admin dan report viewer mendapat link ke Report Shift dan Report 2 Jam.
 
 Rumus:
 
@@ -238,7 +242,7 @@ Aturan:
 
 Fitur:
 
-- Supervisor dan admin dapat membuka report per shift.
+- Report viewer dan admin dapat membuka report per shift.
 - Filter terdiri dari kapal, tanggal, dan shift.
 - Report diambil berdasarkan gate out.
 - Hasil dapat diexport ke Excel.
@@ -258,7 +262,7 @@ Aturan:
 
 Fitur:
 
-- Supervisor dan admin dapat membuka report periode 2 jam.
+- Report viewer dan admin dapat membuka report periode 2 jam.
 - Filter terdiri dari kapal, tanggal, dan periode.
 - Report diambil berdasarkan gate out.
 - Hasil dapat diexport ke Excel.
@@ -279,18 +283,25 @@ Aturan:
 Fitur:
 
 - Admin melihat daftar profile user dari Supabase.
+- Admin dapat mencari user berdasarkan nama, email, atau username.
+- Admin dapat memfilter user berdasarkan role dan status aktif.
+- Admin dapat refresh daftar user.
+- Halaman menampilkan ringkasan total user, active, inactive, checker, dan report viewer.
+- Admin dapat membuat user baru melalui Supabase Edge Function `create-user`.
 - Admin mengedit full name, email, username, role, dan status aktif.
 - Username dipakai untuk login lapangan.
 - Modal validasi menampilkan perubahan sebelum disimpan.
-- Current user tidak dapat menonaktifkan akunnya sendiri.
+- Current user tidak dapat menonaktifkan atau mengubah role akunnya sendiri.
 
 Aturan:
 
-- User baru belum dibuat dari UI.
+- User baru dibuat dari UI melalui Edge Function agar service role key tidak berada di frontend.
+- Email wajib diisi saat create user karena Supabase Auth login memakai email/password.
+- Password create user minimal 8 karakter.
 - Full name wajib diisi.
 - Username opsional, tetapi jika diisi harus 3-32 karakter, diawali huruf/angka, dan hanya berisi huruf kecil, angka, titik, underscore, atau dash.
 - Email opsional, tetapi jika diisi harus valid.
-- Role tersedia: Admin, Checker, Supervisor.
+- Role tersedia: Admin, Checker, Report Viewer.
 
 ### 14. Setting Email
 
@@ -555,7 +566,8 @@ Gunakan status berikut saat testing: `Pass`, `Fail`, `Blocked`, atau `Not Run`.
 |---|---|---|---|
 | ROLE-01 | Menu Admin | Login sebagai admin | Menu admin tampil sesuai role |
 | ROLE-02 | Menu Checker | Login sebagai checker | Menu checker tampil: Dashboard, Input Data, Riwayat Input, Running Report |
-| ROLE-03 | Menu Supervisor | Login sebagai supervisor | Menu supervisor tampil: Dashboard, Report, Report 2 Jam, Report Shift |
+| ROLE-03 | Menu Report Viewer | Login sebagai viewer | Menu viewer tampil: Dashboard, Report, Report 2 Jam, Report Shift |
+| ROLE-06 | Legacy supervisor | Login dengan user lama role supervisor | User diperlakukan sebagai Report Viewer |
 | ROLE-04 | Route tidak sesuai role | Login checker, buka URL admin | Sistem redirect ke default route checker |
 | ROLE-05 | Default route | Login setiap role | User masuk ke default dashboard role masing-masing |
 
@@ -582,6 +594,10 @@ Gunakan status berikut saat testing: `Pass`, `Fail`, `Blocked`, atau `Not Run`.
 | CARGO-17 | Ubah status vessel | Pilih status berbeda di tabel | Modal konfirmasi tampil |
 | CARGO-18 | Confirm status vessel | Klik Confirm Status | Status vessel berubah di daftar |
 | CARGO-19 | Cancel status vessel | Tutup modal status | Status vessel tidak berubah |
+| CARGO-20 | Archive vessel cancel | Klik Archive pada vessel lalu klik Cancel | Modal tertutup dan vessel tetap tampil di daftar aktif |
+| CARGO-21 | Archive vessel confirm | Klik Archive lalu Confirm Archive | Vessel hilang dari daftar aktif, tetapi data historis tidak terhapus dari database |
+| CARGO-22 | Archived vessel tidak muncul di input checker | Login checker yang sebelumnya assigned ke vessel archived | Vessel archived tidak muncul di Input Data dan Riwayat Input aktif |
+| CARGO-23 | Archived vessel tidak muncul di report aktif | Buka Dashboard, Running Report, Shift Report, dan Report 2 Jam | Vessel archived tidak muncul di dropdown/list aktif |
 
 ### D. Input Data Checker
 
@@ -638,7 +654,7 @@ Gunakan status berikut saat testing: `Pass`, `Fail`, `Blocked`, atau `Not Run`.
 |---|---|---|---|
 | REPORT-01 | Load report admin | Admin membuka Report | Filter kapal dan report tampil |
 | REPORT-02 | Load report checker | Checker membuka Running Report | Report vessel assignment tampil tanpa filter global admin |
-| REPORT-03 | Pilih kapal | Admin/supervisor memilih kapal lain | Summary dan tabel berubah sesuai kapal |
+| REPORT-03 | Pilih kapal | Admin/report viewer memilih kapal lain | Summary dan tabel berubah sesuai kapal |
 | REPORT-04 | Summary calculation | Bandingkan total cargo/discharge/remaining/progress dengan data input | Nilai sesuai rumus |
 | REPORT-05 | Hatch calculation | Periksa initial cargo, discharge, remaining, progress per hatch | Nilai sesuai data per hatch |
 | REPORT-06 | Average load | Total discharge dibagi total truck | Average load sesuai rumus |
@@ -685,6 +701,16 @@ Gunakan status berikut saat testing: `Pass`, `Fail`, `Blocked`, atau `Not Run`.
 | USER-07 | Current user inactive disabled | Edit akun yang sedang login | Field status disabled dan akun sendiri tidak bisa dinonaktifkan |
 | USER-08 | Review tanpa perubahan | Klik Review tanpa mengubah data | Modal menyatakan tidak ada perubahan dan Confirm Save disabled |
 | USER-09 | Cancel edit user | Klik Cancel | Tidak ada perubahan data |
+| USER-10 | Search user | Isi kata kunci nama/email/username | Tabel hanya menampilkan user yang sesuai |
+| USER-11 | Filter role | Pilih role Admin/Checker/Report Viewer | Tabel hanya menampilkan role yang dipilih |
+| USER-12 | Filter status | Pilih Active atau Inactive | Tabel hanya menampilkan status yang dipilih |
+| USER-13 | Current user role disabled | Edit akun yang sedang login | Field role disabled dan role akun sendiri tidak bisa diubah |
+| USER-14 | Refresh user list | Klik Refresh | Daftar user dimuat ulang dari Supabase |
+| USER-15 | Create user valid | Klik Tambah User, isi data valid, Review User, Confirm Create | User baru dibuat di Supabase Auth dan muncul di daftar user |
+| USER-16 | Create user tanpa email | Klik Tambah User, kosongkan email | Validasi email wajib tampil |
+| USER-17 | Create user password pendek | Isi password kurang dari 8 karakter | Validasi password minimal 8 karakter tampil |
+| USER-18 | Create user duplicate email/username | Buat user dengan email/username yang sudah ada | Error duplicate tampil dan user tidak dibuat |
+| USER-19 | Create user Edge Function belum deploy | Klik Confirm Create saat function belum tersedia | Error function tampil dan tidak ada user baru di tabel |
 
 ### K. Upload Foto Barcode
 
@@ -713,7 +739,7 @@ Gunakan status berikut saat testing: `Pass`, `Fail`, `Blocked`, atau `Not Run`.
 
 | ID | Skenario | Langkah Test | Expected Result |
 |---|---|---|---|
-| EMPTY-01 | Tidak ada vessel | Login admin/supervisor saat belum ada vessel | Empty state vessel/report tampil |
+| EMPTY-01 | Tidak ada vessel | Login admin/report viewer saat belum ada vessel | Empty state vessel/report tampil |
 | EMPTY-02 | Tidak ada input | Pilih vessel tanpa input discharge | Tabel menampilkan belum ada data |
 | EMPTY-03 | Gagal load Supabase | Simulasikan koneksi/database error | Pesan gagal memuat data tampil |
 | EMPTY-04 | Gagal simpan | Simulasikan error saat save | Pesan gagal simpan tampil dan modal/form tidak hilang |
@@ -754,7 +780,7 @@ Catatan: checklist ini berlaku setelah change request multi cargo/BL diimplement
 
 ## Catatan Testing
 
-- Siapkan minimal 3 akun: admin, checker, supervisor.
+- Siapkan minimal 3 akun: admin, checker, viewer.
 - Siapkan minimal 1 checker aktif untuk assignment.
 - Siapkan minimal 1 vessel aktif dengan beberapa hatch dan destination.
 - Untuk change request multi cargo/BL, siapkan minimal 1 vessel dengan Cargo A dan Cargo B, masing-masing memiliki BL dan FSP berbeda.

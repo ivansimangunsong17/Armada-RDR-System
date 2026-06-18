@@ -108,6 +108,7 @@ export async function getAssignedVesselsForChecker(checkerId) {
           eta,
           start_discharge_date,
           status,
+          deleted_at,
           destinations (
             id,
             name
@@ -136,7 +137,7 @@ export async function getAssignedVesselsForChecker(checkerId) {
 
   return {
     data: (data || [])
-      .filter((row) => row.vessels && row.vessels.status !== 'completed')
+      .filter((row) => row.vessels && !row.vessels.deleted_at && row.vessels.status !== 'completed')
       .map(mapAssignedVessel),
     error,
   }

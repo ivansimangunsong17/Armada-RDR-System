@@ -37,7 +37,7 @@ create table if not exists public.profiles (
   full_name text not null,
   email text,
   username text,
-  role text not null check (role in ('admin', 'checker', 'supervisor')),
+  role text not null check (role in ('admin', 'checker', 'viewer')),
   is_active boolean not null default true,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
@@ -75,7 +75,8 @@ create table if not exists public.vessels (
   status text not null default 'pending' check (status in ('pending', 'active', 'completed')),
   created_by uuid references public.profiles(id),
   created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
+  updated_at timestamptz not null default now(),
+  deleted_at timestamptz
 );
 
 create table if not exists public.vessel_destinations (
