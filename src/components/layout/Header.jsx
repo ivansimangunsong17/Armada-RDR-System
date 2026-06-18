@@ -1,7 +1,7 @@
 import { FaBars } from 'react-icons/fa'
 import { getRoleLabel, getWorkspaceLabel } from '../../utils/roles.js'
 
-function Header({ currentUser, layoutRole, onLogout, onOpenMobileMenu }) {
+function Header({ currentUser, layoutRole, onOpenMobileMenu }) {
   const displayName = currentUser?.name || 'User Dummy'
   const displayRole = getRoleLabel(currentUser?.role)
 
@@ -28,7 +28,7 @@ function Header({ currentUser, layoutRole, onLogout, onOpenMobileMenu }) {
           </div>
         </div>
 
-        <div className="grid w-full grid-cols-1 gap-3 sm:w-auto sm:grid-cols-[1fr_auto] sm:items-center">
+        <div className="w-full sm:w-auto">
           <div className="min-w-0 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm shadow-sm sm:px-4">
             <span className="font-semibold text-slate-900">User:</span>{' '}
             <span className="text-slate-700">{displayName}</span>
@@ -36,14 +36,6 @@ function Header({ currentUser, layoutRole, onLogout, onOpenMobileMenu }) {
             <span className="font-semibold text-slate-900">Role:</span>{' '}
             <span className="text-slate-700">{displayRole}</span>
           </div>
-
-          <button
-            className="w-full rounded-md bg-red-800 px-4 py-2 text-sm font-bold text-white shadow-sm transition-colors hover:bg-red-900 focus:outline-none focus:ring-4 focus:ring-red-100 sm:w-auto"
-            type="button"
-            onClick={onLogout}
-          >
-            Logout
-          </button>
         </div>
       </div>
     </header>

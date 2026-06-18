@@ -1,12 +1,23 @@
 import { NavLink } from 'react-router-dom'
-import { FaTimes } from 'react-icons/fa'
+import { FaSignOutAlt, FaTimes } from 'react-icons/fa'
 import { getRoutesForRole } from '../../routes/roleRoutes.jsx'
 import bgLogoArmada from '../../assets/BGLogoArmada.png'
 import { getRoleLabel, normalizeRole } from '../../utils/roles.js'
 
-function Sidebar({ currentUser, isMobileMenuOpen = false, layoutRole, onCloseMobileMenu }) {
+function Sidebar({
+  currentUser,
+  isMobileMenuOpen = false,
+  layoutRole,
+  onCloseMobileMenu,
+  onLogout,
+}) {
   const currentRole = normalizeRole(layoutRole || currentUser?.role)
   const visibleMenuItems = getRoutesForRole(currentRole).filter((item) => !item.hidden)
+
+  function handleLogout() {
+    onCloseMobileMenu?.()
+    onLogout?.()
+  }
 
   return (
     <>
@@ -93,9 +104,21 @@ function Sidebar({ currentUser, isMobileMenuOpen = false, layoutRole, onCloseMob
           </div>
         </nav>
 
-        <div className="shrink-0 border-t border-white/10 px-4 py-4 text-xs text-red-100/70">
-          <p className="font-bold text-white">{currentUser?.name || 'User'}</p>
-          <p className="mt-1 text-red-100/70">{getRoleLabel(currentRole)} workspace</p>
+        <div className="shrink-0 border-t border-white/10 px-3 py-4">
+          <div className="px-1 text-xs text-red-100/70">
+            <p className="truncate font-bold text-white">{currentUser?.name || 'User'}</p>
+            <p className="mt-1 truncate text-red-100/70">{getRoleLabel(currentRole)} workspace</p>
+          </div>
+          <button
+            className="mt-4 flex min-h-11 w-full items-center gap-3 rounded-lg border border-red-300/25 bg-red-900/70 px-3 py-2.5 text-sm font-bold text-red-50 shadow-sm transition-colors hover:border-red-200/40 hover:bg-red-800 focus:outline-none focus:ring-4 focus:ring-red-300/20"
+            type="button"
+            onClick={handleLogout}
+          >
+            <span className="grid h-8 w-8 shrink-0 place-items-center rounded-md bg-red-950/70 text-red-100">
+              <FaSignOutAlt aria-hidden="true" />
+            </span>
+            <span>Logout</span>
+          </button>
         </div>
       </div>
     </aside>

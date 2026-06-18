@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { FaSpinner } from 'react-icons/fa'
 import Button from '../components/ui/Button.jsx'
 import Input from '../components/ui/Input.jsx'
 import backgroundArmada from '../assets/BackgroundArmada.png'
@@ -75,6 +76,25 @@ function LoginPage({ onLogin, isLoading = false, authError = '' }) {
           )}
         </div>
       </form>
+
+      {isLoading && (
+        <div
+          aria-live="polite"
+          aria-busy="true"
+          className="fixed inset-0 z-50 grid place-items-center bg-slate-950/80 p-6 backdrop-blur-sm"
+        >
+          <div className="w-full max-w-sm rounded-lg border border-white/15 bg-white p-6 text-center shadow-2xl">
+            <FaSpinner
+              aria-hidden="true"
+              className="mx-auto animate-spin text-4xl text-red-800"
+            />
+            <p className="mt-4 text-lg font-extrabold text-slate-950">Memverifikasi akun...</p>
+            <p className="mt-1 text-sm text-slate-600">
+              Mohon tunggu sampai dashboard selesai disiapkan.
+            </p>
+          </div>
+        </div>
+      )}
     </main>
   )
 }
