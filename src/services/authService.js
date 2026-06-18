@@ -49,13 +49,12 @@ export async function getProfileByUsername(username) {
   }
 
   const { data, error } = await supabase
-    .from('profiles')
-    .select('id, full_name, email, username, role, is_active')
-    .eq('username', username.trim().toLowerCase())
-    .maybeSingle()
+    .rpc('resolve_login_email', {
+      login_username: username.trim().toLowerCase(),
+    })
 
   return {
-    profile: data,
+    profile: data ? { email: data } : null,
     error,
   }
 }
