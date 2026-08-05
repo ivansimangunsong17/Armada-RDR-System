@@ -1,26 +1,19 @@
 {
-  "name": "running-discharge-system",
+  "name": "running-discharge-system-workspace",
   "private": true,
   "version": "0.1.0",
-  "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview"
-  },
-  "dependencies": {
-    "@supabase/supabase-js": "^2.108.0",
-    "@tailwindcss/vite": "^4.0.0",
-    "@vitejs/plugin-react": "^5.0.0",
-    "exceljs": "^4.4.0",
-    "jspdf": "^4.2.1",
-    "jspdf-autotable": "^5.0.8",
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0",
-    "react-icons": "^5.6.0",
-    "react-router-dom": "^7.0.0",
-    "tailwindcss": "^4.0.0",
-    "vite": "^7.0.0",
-    "xlsx": "^0.18.5"
+    "dev:fe": "npm --prefix frontend run dev -- --host 127.0.0.1",
+    "dev:be": "npm --prefix backend run dev",
+    "dev:frontend": "npm --prefix frontend run dev",
+    "dev:backend": "npm --prefix backend run dev",
+    "start:backend": "npm --prefix backend start",
+    "build": "npm --prefix frontend run build",
+    "preview": "npm --prefix frontend run preview",
+    "db:backup": "npm --prefix backend run db:backup",
+    "db:migrate": "npm --prefix backend run db:migrate",
+    "db:schema": "npm --prefix backend run db:schema",
+    "db:seed-admin": "npm --prefix backend run db:seed-admin",
+    "install:all": "npm --prefix frontend install && npm --prefix backend install"
   }
 }

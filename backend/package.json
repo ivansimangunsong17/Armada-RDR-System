@@ -1,0 +1,27 @@
+{
+  "name": "running-discharge-system-api",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "db:backup": "node scripts/backup-postgres.js",
+    "db:migrate": "node scripts/migrate.js",
+    "db:schema": "node scripts/apply-schema.js",
+    "db:seed-admin": "node scripts/seed-admin.js",
+    "dev": "nodemon src/server.js",
+    "start": "node src/server.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "jsonwebtoken": "^9.0.2",
+    "morgan": "^1.10.0",
+    "multer": "^2.2.0",
+    "pg": "^8.13.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.4"
+  }
+}

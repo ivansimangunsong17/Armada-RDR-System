@@ -4,9 +4,10 @@ dist/
 .env.*
 !.env.example
 
-supabase/.temp/
 backups/
 releases/
+backend/uploads/
+backend/backups/
 
 npm-debug.log*
 yarn-debug.log*

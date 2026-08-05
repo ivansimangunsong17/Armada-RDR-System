@@ -1,0 +1,1491 @@
+import { useEffect, useMemo, useState } from 'react'
+import Badge from '../components/ui/Badge.jsx'
+import Button from '../components/ui/Button.jsx'
+import Card from '../components/ui/Card.jsx'
+import Input from '../components/ui/Input.jsx'
+import Modal from '../components/ui/Modal.jsx'
+import Select from '../components/ui/Select.jsx'
+import { formatDate, formatMT } from '../utils/formatters.js'
+import {
+  formatTonnageInput,
+  formatTonnageInputFromNumber,
+  parseTonnageInputToNumber,
+} from '../utils/tonnageInput.js'
+import { isViewerRole } from '../utils/roles.js'
+import { vesselService } from '../services/vesselService.js'
+import { createVesselArchivePackage } from '../services/archiveService.js'
+import { validateVesselForm } from '../utils/validators.js'
+
+const emptyForm = {
+  vesselName: '',
+  cargoOwner: '',
+  cargoType: '',
+  destinationName: '',
+  destinationOptionId: '',
+  destinationRows: [],
+  assignedCheckerId: '',
+  totalHatch: 1,
+  eta: '',
+  startDischargeDate: '',
+  status: 'pending',
+  hatchCargoRows: [{ hatchNo: 1, initialCargo: '' }],
+}
+
+const statusVariant = {
+  active: 'active',
+  pending: 'pending',
+  completed: 'completed',
+}
+
+const statusOptions = [
+  { value: 'pending', label: 'Pending' },
+  { value: 'active', label: 'Active' },
+  { value: 'completed', label: 'Completed' },
+]
+
+function createHatchCargoRows(totalHatch, existingRows = []) {
+  return Array.from({ length: Number(totalHatch) || 0 }, (_, index) => {
+    const hatchNo = index + 1
+    const existing = existingRows.find((row) => Number(row.hatchNo) === hatchNo)
+
+    return {
+      hatchNo,
+      initialCargo:
+        existing?.initialCargo === undefined || existing?.initialCargo === ''
+          ? ''
+          : typeof existing.initialCargo === 'number'
+            ? formatTonnageInputFromNumber(existing.initialCargo)
+            : formatTonnageInput(existing.initialCargo),
+    }
+  })
+}
+
+function getStatusLabel(status) {
+  return statusOptions.find((option) => option.value === status)?.label || status
+}
+
+function mapHatchCargoForApp(rows) {
+  return rows.map((row) => ({
+    id: row.id,
+    vesselId: row.vessel_id,
+    hatch: row.hatch_label || `H${row.hatch_no}`,
+    hatchNo: row.hatch_no,
+    tonnage: Number(row.initial_cargo) || 0,
+  }))
+}
+
+function getDestinationKey(row) {
+  return row.destinationId || String(row.name || '').trim().toLowerCase()
+}
+
+function isSameDestination(row, destinationId, destinationName) {
+  if (destinationId && row.destinationId === destinationId) return true
+
+  return String(row.name || '').trim().toLowerCase() === String(destinationName || '').trim().toLowerCase()
+}
+
+function getDestinationSummary(rows = []) {
+  const activeRows = rows.filter((row) => row.isActive)
+  const inactiveRows = rows.filter((row) => !row.isActive)
+  const activeLabel = activeRows.map((row) => row.name).filter(Boolean).join(', ')
+
+  if (!inactiveRows.length) return activeLabel || '-'
+
+  return `${activeLabel || '-'} (${inactiveRows.length} inactive)`
+}
+
+function getVesselDestinationRows(vessel, destinationMap = {}) {
+  const relationRows = (vessel.destinations || []).map((destination) => ({
+    vesselDestinationId: destination.vesselDestinationId,
+    destinationId: destination.destinationId,
+    name: destination.name || destinationMap[destination.destinationId] || '-',
+    isActive: destination.isActive !== false,
+  }))
+
+  if (relationRows.length > 0) {
+    return relationRows
+  }
+
+  if (!vessel.destination_id && !vessel.destinationId) {
+    return []
+  }
+
+  const destinationId = vessel.destination_id || vessel.destinationId
+
+  return [
+    {
+      vesselDestinationId: '',
+      destinationId,
+      name: destinationMap[destinationId] || vessel.destination || destinationId,
+      isActive: true,
+    },
+  ]
+}
+
+function getTotalCargo(hatchCargoRows = []) {
+  return hatchCargoRows.reduce(
+    (total, hatch) => total + (Number(hatch.initialCargo) || 0),
+    0,
+  )
+}
+
+function VesselInformationList({
+  emptyMessage,
+  isReadOnly,
+  onArchive,
+  onEdit,
+  onStatusChange,
+  rows,
+}) {
+  if (rows.length === 0) {
+    return (
+      <div className="rounded-lg border border-slate-200 bg-slate-50 p-5 text-sm font-semibold text-slate-500">
+        {emptyMessage}
+      </div>
+    )
+  }
+
+  return (
+    <div className="grid gap-3">
+      {rows.map((row) => (
+        <article
+          className={[
+            'grid min-w-0 gap-3 rounded-lg border border-slate-200 bg-white px-4 py-3 shadow-sm shadow-slate-200/70 xl:items-center',
+            isReadOnly
+              ? 'xl:grid-cols-[minmax(0,1.4fr)_minmax(0,1.1fr)_minmax(0,0.8fr)_minmax(0,0.85fr)_auto]'
+              : 'xl:grid-cols-[minmax(0,1.45fr)_minmax(0,1fr)_minmax(0,0.9fr)_minmax(0,0.65fr)_minmax(0,0.72fr)_auto_minmax(17rem,18rem)]',
+          ].join(' ')}
+          key={row.id || row.vesselName}
+        >
+          <div className="min-w-0">
+            <p className="wrap-break-word text-sm font-extrabold text-slate-950">{row.vesselName || '-'}</p>
+            <p className="mt-1 wrap-break-word text-xs font-semibold text-slate-500">
+              {row.company || '-'} / {row.cargo || '-'}
+            </p>
+          </div>
+
+          <div className="min-w-0">
+            <p className="wrap-break-word text-sm font-bold text-slate-800">{getDestinationSummary(row.destinations)}</p>
+            <p className="mt-1 text-xs font-semibold text-slate-500">
+              Start {formatDate(row.startDate)}
+            </p>
+          </div>
+
+          {!isReadOnly && (
+            <div className="min-w-0">
+              <p className="wrap-break-word text-sm font-semibold text-slate-700">
+                {row.assignedCheckerName || '-'}
+              </p>
+              <p className="mt-1 text-xs font-semibold text-slate-500">Checker</p>
+            </div>
+          )}
+
+          <div className="min-w-0">
+            <p className="text-sm font-bold text-slate-800">{row.totalHatch || 0} Hatch</p>
+            <p className="mt-1 text-xs font-semibold text-slate-500">
+              FSP {(row.hatchCargoRows || []).length || 0} row
+            </p>
+            {isReadOnly && (
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {(row.hatchCargoRows || []).map((hatch) => (
+                  <span
+                    className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-bold text-slate-700"
+                    key={hatch.id || hatch.hatchNo}
+                  >
+                    {hatch.hatchLabel || `H${hatch.hatchNo}`}: {formatMT(hatch.initialCargo)}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="min-w-0">
+            <p className="text-sm font-bold text-slate-950">{formatMT(getTotalCargo(row.hatchCargoRows || []))}</p>
+            <p className="mt-1 text-xs font-semibold text-slate-500">Total Cargo</p>
+          </div>
+
+          <div className="min-w-0">
+            <Badge variant={statusVariant[row.status] || 'pending'}>{getStatusLabel(row.status)}</Badge>
+          </div>
+
+          {!isReadOnly && (
+            <div className="grid min-w-0 gap-2 sm:grid-cols-[80px_minmax(8rem,1fr)_96px]">
+              <Button
+                variant="secondary"
+                onClick={() => onEdit(row)}
+                className="min-h-9 w-full justify-center px-3 py-1.5 text-sm"
+              >
+                Edit
+              </Button>
+              <Select
+                aria-label={`Status ${row.vesselName}`}
+                className="min-h-9 w-full py-1.5 text-sm"
+                value={row.status}
+                onChange={(event) => onStatusChange(row, event.target.value)}
+              >
+                {statusOptions.map((statusOption) => (
+                  <option key={statusOption.value} value={statusOption.value}>
+                    {statusOption.label}
+                  </option>
+                ))}
+              </Select>
+              <Button
+                variant="secondary"
+                onClick={() => onArchive(row)}
+                className="min-h-9 w-full justify-center border-red-200 px-3 py-1.5 text-sm text-red-800 hover:bg-red-50"
+              >
+                Archive
+              </Button>
+            </div>
+          )}
+        </article>
+      ))}
+    </div>
+  )
+}
+
+function VesselDataPage({ appState, readOnly = false }) {
+  const { vessels, setVessels, setHatchCargo, currentUser } = appState
+  const isReadOnly = readOnly || isViewerRole(currentUser?.role)
+  const [form, setForm] = useState(emptyForm)
+  const [errors, setErrors] = useState({})
+  const [destinationOptions, setDestinationOptions] = useState([])
+  const [checkers, setCheckers] = useState([])
+  const [isLoading, setIsLoading] = useState(true)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [editingVessel, setEditingVessel] = useState(null)
+  const [loadError, setLoadError] = useState('')
+  const [isVesselReviewOpen, setIsVesselReviewOpen] = useState(false)
+  const [pendingStatusChange, setPendingStatusChange] = useState(null)
+  const [pendingArchiveVessel, setPendingArchiveVessel] = useState(null)
+  const [isArchiving, setIsArchiving] = useState(false)
+  const [isArchivePackageCreating, setIsArchivePackageCreating] = useState(false)
+  const [archivePackageProgress, setArchivePackageProgress] = useState({
+    stage: '',
+    totalPhoto: 0,
+    downloaded: 0,
+    failed: 0,
+  })
+  const [archivePackageMessage, setArchivePackageMessage] = useState('')
+  const [archivePackageError, setArchivePackageError] = useState('')
+
+  const checkerLookup = useMemo(
+    () => Object.fromEntries(checkers.map((item) => [item.id, item.full_name])),
+    [checkers],
+  )
+
+  useEffect(() => {
+    loadData()
+  }, [])
+
+  async function loadData() {
+    setIsLoading(true)
+    setLoadError('')
+
+    const [destinationsResult, vesselsResult, checkersResult] = await Promise.all([
+      vesselService.getDestinations(),
+      vesselService.getAll(),
+      vesselService.getCheckerProfiles(),
+    ])
+
+    const nextDestinations = destinationsResult.data || []
+    const nextVessels = vesselsResult.data || []
+    const nextCheckers = checkersResult.data || []
+    const vesselIds = nextVessels.map((vessel) => vessel.id)
+
+    const [hatchCargoResult, assignmentsResult] = await Promise.all([
+      vesselService.getHatchCargoByVesselIds(vesselIds),
+      vesselService.getCheckerAssignmentsByVesselIds(vesselIds),
+    ])
+
+    const nextLoadErrors = []
+
+    if (destinationsResult.error) nextLoadErrors.push('Gagal memuat destinations.')
+    if (vesselsResult.error) nextLoadErrors.push('Gagal memuat vessels.')
+    if (checkersResult.error) nextLoadErrors.push('Gagal memuat checker.')
+    if (hatchCargoResult.error) nextLoadErrors.push('Gagal memuat Final Stowage Plan.')
+    if (assignmentsResult.error) nextLoadErrors.push('Gagal memuat checker assignment.')
+
+    setCheckers(nextCheckers)
+    setDestinationOptions(nextDestinations)
+
+    const destinationMap = Object.fromEntries(nextDestinations.map((item) => [item.id, item.name]))
+    const checkerMap = Object.fromEntries(nextCheckers.map((item) => [item.id, item.full_name]))
+    const hatchCargoByVessel = (hatchCargoResult.data || []).reduce((result, row) => {
+      result[row.vessel_id] = result[row.vessel_id] || []
+      result[row.vessel_id].push(row)
+      return result
+    }, {})
+    const assignmentByVessel = Object.fromEntries(
+      (assignmentsResult.data || []).map((assignment) => [assignment.vessel_id, assignment]),
+    )
+
+    setVessels(
+      nextVessels.map((item) => {
+        const assignment = assignmentByVessel[item.id]
+
+        return {
+          id: item.id,
+          vesselName: item.vessel_name,
+          company: item.cargo_owner,
+          cargo: item.cargo_type,
+          destinationId: item.destination_id,
+          destination: destinationMap[item.destination_id] || item.destination_id,
+          destinations: getVesselDestinationRows(item, destinationMap),
+          totalHatch: item.total_hatch,
+          eta: item.eta,
+          startDate: item.start_discharge_date,
+          status: item.status,
+          createdBy: item.created_by,
+          assignedCheckerId: assignment?.checker_id || '',
+          assignedCheckerName: checkerMap[assignment?.checker_id] || '-',
+          hatchCargoRows: (hatchCargoByVessel[item.id] || []).map((row) => ({
+            id: row.id,
+            hatchNo: row.hatch_no,
+            hatchLabel: row.hatch_label,
+            initialCargo: Number(row.initial_cargo) || 0,
+          })),
+        }
+      }),
+    )
+
+    if (setHatchCargo) {
+      setHatchCargo(mapHatchCargoForApp(hatchCargoResult.data || []))
+    }
+
+    setLoadError(nextLoadErrors.join(' '))
+    setIsLoading(false)
+  }
+
+  function updateForm(field, value) {
+    setForm((current) => {
+      if (field === 'totalHatch') {
+        const totalHatch = Number(value)
+
+        return {
+          ...current,
+          totalHatch,
+          hatchCargoRows: createHatchCargoRows(totalHatch, current.hatchCargoRows),
+        }
+      }
+
+      return {
+        ...current,
+        [field]: value,
+      }
+    })
+  }
+
+  function updateHatchCargoValue(hatchNo, value) {
+    setForm((current) => ({
+      ...current,
+      hatchCargoRows: current.hatchCargoRows.map((row) =>
+        row.hatchNo === hatchNo
+          ? {
+              ...row,
+              initialCargo: formatTonnageInput(value),
+            }
+          : row,
+      ),
+    }))
+  }
+
+  function handleAddDestination() {
+    const selectedDestination = destinationOptions.find(
+      (destination) => destination.id === form.destinationOptionId,
+    )
+    const destinationName = selectedDestination?.name || form.destinationName.trim()
+    const destinationId = selectedDestination?.id || ''
+
+    if (!destinationName) {
+      setErrors((current) => ({
+        ...current,
+        destinationRows: 'Pilih destination existing atau isi destination baru.',
+      }))
+      return
+    }
+
+    const existingRow = form.destinationRows.find((row) =>
+      isSameDestination(row, destinationId, destinationName),
+    )
+
+    if (existingRow?.isActive) {
+      setErrors((current) => ({
+        ...current,
+        destinationRows: 'Destination sudah aktif pada vessel ini.',
+      }))
+      return
+    }
+
+    setForm((current) => {
+      if (existingRow) {
+        return {
+          ...current,
+          destinationName: '',
+          destinationOptionId: '',
+          destinationRows: current.destinationRows.map((row) =>
+            isSameDestination(row, destinationId, destinationName) ? { ...row, isActive: true } : row,
+          ),
+        }
+      }
+
+      return {
+        ...current,
+        destinationName: '',
+        destinationOptionId: '',
+        destinationRows: [
+          ...current.destinationRows,
+          {
+            vesselDestinationId: '',
+            destinationId,
+            name: destinationName,
+            isActive: true,
+          },
+        ],
+      }
+    })
+    setErrors((current) => ({
+      ...current,
+      destinationRows: '',
+    }))
+  }
+
+  function handleToggleDestination(destinationKey, isActive) {
+    setForm((current) => ({
+      ...current,
+      destinationRows: current.destinationRows.map((row) =>
+        getDestinationKey(row) === destinationKey ? { ...row, isActive } : row,
+      ),
+    }))
+  }
+
+  function validateForm() {
+    const nextErrors = validateVesselForm(form, {
+      parseTonnage: parseTonnageInputToNumber,
+    })
+    setErrors(nextErrors)
+    return Object.keys(nextErrors).length === 0
+  }
+
+  function handleSubmit(event) {
+    event.preventDefault()
+    if (isReadOnly) return
+    if (!validateForm()) return
+    if (!currentUser) return
+
+    setIsVesselReviewOpen(true)
+  }
+
+  async function handleConfirmVesselSave() {
+    if (isReadOnly) return
+    if (!currentUser) return
+
+    setIsSubmitting(true)
+    setLoadError('')
+
+    const activeDestinationRows = form.destinationRows.filter((row) => row.isActive)
+    const resolvedDestinationRows = []
+
+    for (const row of activeDestinationRows) {
+      const destinationResult = row.destinationId
+        ? { data: { id: row.destinationId, name: row.name }, error: null }
+        : await vesselService.getOrCreateDestinationByName(row.name)
+
+      if (destinationResult.error || !destinationResult.data) {
+        setLoadError(`Gagal menyiapkan destination. ${destinationResult.error?.message || ''}`)
+        setIsSubmitting(false)
+        return
+      }
+
+      resolvedDestinationRows.push({
+        ...row,
+        destinationId: destinationResult.data.id,
+        name: destinationResult.data.name || row.name,
+      })
+    }
+
+    const primaryDestination = resolvedDestinationRows[0]
+
+    if (!primaryDestination) {
+      setLoadError('Minimal satu destination active wajib tersedia.')
+      setIsSubmitting(false)
+      return
+    }
+
+    const payload = {
+      vessel_name: form.vesselName.trim(),
+      cargo_owner: form.cargoOwner.trim(),
+      cargo_type: form.cargoType.trim(),
+      destination_id: primaryDestination.destinationId,
+      total_hatch: Number(form.totalHatch),
+      eta: form.eta || null,
+      start_discharge_date: form.startDischargeDate,
+      status: form.status,
+      created_by: currentUser.authUserId || currentUser.id,
+    }
+
+    const vesselResult = editingVessel
+      ? await vesselService.update(editingVessel.id, payload)
+      : await vesselService.create(payload)
+
+    if (vesselResult.error) {
+      setLoadError(`Gagal menyimpan data kapal. ${vesselResult.error.message || ''}`)
+      setIsSubmitting(false)
+      return
+    }
+
+    const vesselId = vesselResult.data.id
+
+    for (const row of resolvedDestinationRows) {
+      const result = await vesselService.addDestination(
+        vesselId,
+        row.destinationId,
+        currentUser.authUserId || currentUser.id,
+      )
+
+      if (result.error) {
+        setLoadError(`Kapal tersimpan, tetapi destination gagal disimpan. ${result.error.message || ''}`)
+        setIsSubmitting(false)
+        return
+      }
+    }
+
+    const inactiveExistingRows = form.destinationRows.filter(
+      (row) => !row.isActive && row.destinationId,
+    )
+
+    for (const row of inactiveExistingRows) {
+      const result = await vesselService.deactivateDestination(vesselId, row.destinationId)
+
+      if (result.error) {
+        setLoadError(`Kapal tersimpan, tetapi destination gagal dinonaktifkan. ${result.error.message || ''}`)
+        setIsSubmitting(false)
+        return
+      }
+    }
+
+    const hatchResult = await vesselService.saveHatchCargo(
+      vesselId,
+      form.hatchCargoRows.map((row) => ({
+        hatchNo: row.hatchNo,
+        initialCargo: parseTonnageInputToNumber(row.initialCargo),
+      })),
+    )
+
+    if (hatchResult.error) {
+      setLoadError(`Kapal tersimpan, tetapi Final Stowage Plan gagal disimpan. ${hatchResult.error.message || ''}`)
+      setIsSubmitting(false)
+      return
+    }
+
+    const deleteExtraResult = await vesselService.deleteExtraHatchCargo(vesselId, form.totalHatch)
+
+    if (deleteExtraResult.error) {
+      setLoadError(`Final Stowage Plan tersimpan, tetapi hatch lama gagal dibersihkan. ${deleteExtraResult.error.message || ''}`)
+      setIsSubmitting(false)
+      return
+    }
+
+    const assignmentResult = await vesselService.saveCheckerAssignment(
+      vesselId,
+      form.assignedCheckerId,
+      currentUser.authUserId || currentUser.id,
+    )
+
+    if (assignmentResult.error) {
+      setLoadError(`Kapal dan Final Stowage Plan tersimpan, tetapi assignment checker gagal. ${assignmentResult.error.message || ''}`)
+      setIsSubmitting(false)
+      return
+    }
+
+    const newRow = {
+      id: vesselResult.data.id,
+      vesselName: vesselResult.data.vessel_name,
+      company: vesselResult.data.cargo_owner,
+      cargo: vesselResult.data.cargo_type,
+      destinationId: vesselResult.data.destination_id,
+      destination: primaryDestination.name,
+      destinations: [
+        ...resolvedDestinationRows,
+        ...form.destinationRows.filter((row) => !row.isActive && row.destinationId),
+      ],
+      totalHatch: vesselResult.data.total_hatch,
+      eta: vesselResult.data.eta,
+      startDate: vesselResult.data.start_discharge_date,
+      status: vesselResult.data.status,
+      createdBy: vesselResult.data.created_by,
+      assignedCheckerId: form.assignedCheckerId,
+      assignedCheckerName: checkerLookup[form.assignedCheckerId] || '-',
+      hatchCargoRows: hatchResult.data.map((row) => ({
+        id: row.id,
+        hatchNo: row.hatch_no,
+        hatchLabel: row.hatch_label,
+        initialCargo: Number(row.initial_cargo) || 0,
+      })),
+    }
+
+    setVessels((current) => {
+      if (editingVessel) {
+        return current.map((row) => (row.id === editingVessel.id ? newRow : row))
+      }
+      return [...current, newRow]
+    })
+
+    if (setHatchCargo) {
+      setHatchCargo((current) => [
+        ...current.filter((row) => row.vesselId !== vesselId),
+        ...mapHatchCargoForApp(hatchResult.data),
+      ])
+    }
+
+    setForm(emptyForm)
+    setErrors({})
+    setEditingVessel(null)
+    setIsVesselReviewOpen(false)
+    setIsSubmitting(false)
+  }
+
+  function handleEdit(vessel) {
+    if (isReadOnly) return
+    setEditingVessel(vessel)
+    setForm({
+      vesselName: vessel.vesselName || '',
+      cargoOwner: vessel.company || '',
+      cargoType: vessel.cargo || '',
+      destinationName: '',
+      destinationOptionId: '',
+      destinationRows: getVesselDestinationRows(vessel),
+      assignedCheckerId: vessel.assignedCheckerId || '',
+      totalHatch: vessel.totalHatch || 1,
+      eta: vessel.eta ? String(vessel.eta).slice(0, 10) : '',
+      startDischargeDate: vessel.startDate || '',
+      status: vessel.status || 'pending',
+      hatchCargoRows: createHatchCargoRows(
+        vessel.totalHatch || 1,
+        (vessel.hatchCargoRows || []).map((row) => ({
+          hatchNo: row.hatchNo,
+          initialCargo: row.initialCargo,
+        })),
+      ),
+    })
+    setErrors({})
+  }
+
+  function handleCancelEdit() {
+    if (isSubmitting) return
+    setEditingVessel(null)
+    setForm(emptyForm)
+    setErrors({})
+    setIsVesselReviewOpen(false)
+  }
+
+  function handleStatusChange(vessel, nextStatus) {
+    if (isReadOnly) return
+    if (vessel.status === nextStatus) return
+    setPendingStatusChange({
+      vessel,
+      nextStatus,
+    })
+  }
+
+  async function handleConfirmStatusChange() {
+    if (isReadOnly) return
+    if (!pendingStatusChange) return
+
+    setLoadError('')
+    const result = await vesselService.changeStatus(
+      pendingStatusChange.vessel.id,
+      pendingStatusChange.nextStatus,
+    )
+
+    if (result.error) {
+      setLoadError('Gagal mengubah status kapal.')
+      return
+    }
+
+    setVessels((current) =>
+      current.map((row) =>
+        row.id === pendingStatusChange.vessel.id
+          ? {
+              ...row,
+              status: result.data.status,
+            }
+          : row,
+        ),
+    )
+    setPendingStatusChange(null)
+  }
+
+  function handleArchiveClick(vessel) {
+    if (isReadOnly) return
+    setPendingArchiveVessel(vessel)
+    setLoadError('')
+  }
+
+  async function handleConfirmArchive() {
+    if (isReadOnly || !pendingArchiveVessel) return
+
+    setIsArchiving(true)
+    setLoadError('')
+
+    const result = await vesselService.archive(pendingArchiveVessel.id)
+
+    if (result.error) {
+      setLoadError(`Gagal mengarchive vessel. ${result.error.message || ''}`.trim())
+      setIsArchiving(false)
+      return
+    }
+
+    setVessels((current) => current.filter((row) => row.id !== pendingArchiveVessel.id))
+    if (setHatchCargo) {
+      setHatchCargo((current) => current.filter((row) => row.vesselId !== pendingArchiveVessel.id))
+    }
+    if (editingVessel?.id === pendingArchiveVessel.id) {
+      handleCancelEdit()
+    }
+    setPendingArchiveVessel(null)
+    setIsArchiving(false)
+  }
+
+  async function handleCreateArchivePackage() {
+    if (isReadOnly || !editingVessel || editingVessel.status !== 'completed') return
+
+    setIsArchivePackageCreating(true)
+    setArchivePackageMessage('')
+    setArchivePackageError('')
+    setArchivePackageProgress({
+      stage: 'Preparing Data...',
+      totalPhoto: 0,
+      downloaded: 0,
+      failed: 0,
+    })
+
+    const result = await createVesselArchivePackage({
+      vessel: editingVessel,
+      currentUser,
+      onProgress: (progress) => {
+        setArchivePackageProgress((current) => ({
+          ...current,
+          ...progress,
+        }))
+      },
+    })
+
+    if (result.error) {
+      setArchivePackageError(result.error.message || 'Archive Package gagal dibuat.')
+    } else if (result.stats?.failed > 0) {
+      setArchivePackageMessage('Archive selesai dengan beberapa file gagal diunduh. Lihat failed-files.txt.')
+    } else {
+      setArchivePackageMessage('Archive Package berhasil dibuat.')
+    }
+
+    setIsArchivePackageCreating(false)
+  }
+
+  const columns = [
+    {
+      key: 'vessel',
+      label: 'Cargo',
+      render: (row) => (
+        <div className="min-w-64">
+          <p className="font-extrabold text-slate-900">{row.vesselName || '-'}</p>
+          <p className="mt-1 text-xs font-semibold text-slate-500">
+            {row.company || '-'} / {row.cargo || '-'}
+          </p>
+        </div>
+      ),
+    },
+    {
+      key: 'destination',
+      label: 'Destination',
+      render: (row) => (
+        <div>
+          <p className="font-bold text-slate-800">{getDestinationSummary(row.destinations)}</p>
+          <p className="mt-1 text-xs font-semibold text-slate-500">
+            Start {formatDate(row.startDate)}
+          </p>
+        </div>
+      ),
+    },
+    {
+      key: 'assignedCheckerName',
+      label: 'Checker',
+      render: (row) => (
+        <span className={row.assignedCheckerName && row.assignedCheckerName !== '-' ? 'font-semibold text-slate-700' : 'text-slate-400'}>
+          {row.assignedCheckerName || '-'}
+        </span>
+      ),
+    },
+    {
+      key: 'plan',
+      label: 'Plan',
+      render: (row) => (
+        <div className="min-w-56">
+          <p className="font-bold text-slate-800">{row.totalHatch || 0} Hatch</p>
+          <p className="mt-1 text-xs font-semibold text-slate-500">
+            FSP {(row.hatchCargoRows || []).length || 0} row
+          </p>
+          {isReadOnly && (
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {(row.hatchCargoRows || []).map((hatch) => (
+                <span
+                  className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-bold text-slate-700"
+                  key={hatch.id || hatch.hatchNo}
+                >
+                  {hatch.hatchLabel || `H${hatch.hatchNo}`}: {formatMT(hatch.initialCargo)}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      ),
+    },
+    {
+      key: 'totalCargo',
+      label: 'Total Cargo',
+      render: (row) =>
+        formatMT(
+          (row.hatchCargoRows || []).reduce(
+            (total, hatch) => total + (Number(hatch.initialCargo) || 0),
+            0,
+          ),
+        ),
+    },
+    {
+      key: 'status',
+      label: 'Status',
+      render: (row) => (
+        <div className="min-w-28">
+          <Badge variant={statusVariant[row.status] || 'pending'}>{getStatusLabel(row.status)}</Badge>
+        </div>
+      ),
+    },
+    {
+      key: 'actions',
+      label: 'Aksi',
+      render: (row) => (
+        <div className="flex min-w-48 flex-col gap-2">
+          <Button variant="secondary" onClick={() => handleEdit(row)} className="w-full justify-center">
+            Edit
+          </Button>
+          <Select
+            aria-label={`Status ${row.vesselName}`}
+            className="min-w-40"
+            value={row.status}
+            onChange={(event) => handleStatusChange(row, event.target.value)}
+          >
+            {statusOptions.map((statusOption) => (
+              <option key={statusOption.value} value={statusOption.value}>
+                {statusOption.label}
+              </option>
+            ))}
+          </Select>
+          <Button
+            variant="secondary"
+            onClick={() => handleArchiveClick(row)}
+            className="w-full justify-center border-red-200 text-red-800 hover:bg-red-50"
+          >
+            Archive
+          </Button>
+        </div>
+      ),
+    },
+  ].filter((column) => {
+    if (!isReadOnly) return true
+    return !['assignedCheckerName', 'actions'].includes(column.key)
+  })
+
+  const canCreate = checkers.length > 0
+  const formTotalCargo = form.hatchCargoRows.reduce(
+    (total, row) => total + parseTonnageInputToNumber(row.initialCargo),
+    0,
+  )
+  const formCheckerName = checkerLookup[form.assignedCheckerId] || '-'
+  const editingTotalCargo = editingVessel
+    ? (editingVessel.hatchCargoRows || []).reduce(
+        (total, hatch) => total + (Number(hatch.initialCargo) || 0),
+        0,
+      )
+    : 0
+  const vesselReviewRows = [
+    ['Vessel Name', editingVessel?.vesselName || 'Data baru', form.vesselName.trim() || '-'],
+    ['Cargo Owner', editingVessel?.company || 'Data baru', form.cargoOwner.trim() || '-'],
+    ['Cargo Type', editingVessel?.cargo || 'Data baru', form.cargoType.trim() || '-'],
+    [
+      'Destinations',
+      editingVessel ? getDestinationSummary(editingVessel.destinations) : 'Data baru',
+      getDestinationSummary(form.destinationRows),
+    ],
+    ['Assigned Checker', editingVessel?.assignedCheckerName || 'Data baru', formCheckerName],
+    ['Total Hatch', String(editingVessel?.totalHatch || 'Data baru'), String(form.totalHatch || '-')],
+    [
+      'Start Discharge Date',
+      editingVessel?.startDate ? formatDate(editingVessel.startDate) : 'Data baru',
+      form.startDischargeDate ? formatDate(form.startDischargeDate) : '-',
+    ],
+    [
+      'Status',
+      editingVessel ? getStatusLabel(editingVessel.status) : 'Data baru',
+      getStatusLabel(form.status),
+    ],
+    [
+      'Total Cargo',
+      editingVessel ? formatMT(editingTotalCargo) : 'Data baru',
+      formatMT(formTotalCargo),
+    ],
+  ].filter((row) => !editingVessel || row[1] !== row[2])
+  const canConfirmVesselSave = !editingVessel || vesselReviewRows.length > 0
+
+  function renderFormContainer(children) {
+    const subtitle = canCreate
+      ? 'Form ini menyimpan cargo information, Final Stowage Plan, dan checker assignment ke server.'
+      : 'Tidak dapat menambahkan cargo information karena profile checker belum tersedia.'
+
+    if (editingVessel) {
+      return (
+        <Modal
+          isOpen={Boolean(editingVessel)}
+          onClose={handleCancelEdit}
+          title={`Edit Cargo Information - ${editingVessel.vesselName || '-'}`}
+        >
+          {children}
+        </Modal>
+      )
+    }
+
+    return (
+      <Card title="Tambah Kapal" subtitle={subtitle}>
+        {children}
+      </Card>
+    )
+  }
+
+  return (
+    <div className="grid gap-6">
+      <div>
+        <h2 className="text-2xl font-bold text-slate-900">Cargo Information</h2>
+        <p className="mt-1 text-sm text-slate-500">
+          {isReadOnly
+            ? 'Lihat informasi cargo, kapal, destination, dan Final Stowage Plan secara read-only.'
+            : 'Kelola informasi cargo, kapal, destination, FSP, dan checker assignment.'}
+        </p>
+      </div>
+
+      {isReadOnly && (
+        <Card>
+          <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900">
+            <p className="font-extrabold">Mode read-only Report Viewer</p>
+            <p className="mt-1 font-semibold">
+              Data cargo information hanya bisa dilihat. Create, edit, assign, status change, dan deactivate destination tidak tersedia.
+            </p>
+          </div>
+        </Card>
+      )}
+
+      {isReadOnly && loadError && (
+        <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+          {loadError}
+        </div>
+      )}
+
+      {!isReadOnly && renderFormContainer(
+        <>
+        {editingVessel && (
+          <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+            <p className="font-extrabold">Mode edit aktif: {editingVessel.vesselName}</p>
+            <p className="mt-1 font-semibold">
+              Ubah data di form ini, lalu klik Update Cargo Information.
+            </p>
+          </div>
+        )}
+        {editingVessel?.status === 'completed' && !isReadOnly && (
+          <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+              <div>
+                <p className="text-sm font-extrabold text-slate-950">Archive Package</p>
+                <p className="mt-1 text-sm font-semibold text-slate-600">
+                  Status Vessel : {getStatusLabel(editingVessel.status)}
+                </p>
+                <p className="mt-2 max-w-3xl text-sm text-slate-500">
+                  Generate satu file ZIP berisi seluruh data vessel untuk kebutuhan backup dan arsip perusahaan.
+                </p>
+              </div>
+              <Button
+                type="button"
+                variant="success"
+                disabled={isArchivePackageCreating}
+                onClick={handleCreateArchivePackage}
+              >
+                {isArchivePackageCreating ? 'Creating Package...' : 'Create Archive Package'}
+              </Button>
+            </div>
+
+            {(isArchivePackageCreating || archivePackageProgress.stage) && (
+              <div className="mt-4 grid gap-3 rounded-lg border border-slate-200 bg-white p-4 text-sm md:grid-cols-4">
+                <div>
+                  <p className="font-extrabold text-slate-500">Progress</p>
+                  <p className="mt-1 font-black text-slate-950">{archivePackageProgress.stage || '-'}</p>
+                </div>
+                <div>
+                  <p className="font-extrabold text-slate-500">Total Photo</p>
+                  <p className="mt-1 font-black text-slate-950">{archivePackageProgress.totalPhoto}</p>
+                </div>
+                <div>
+                  <p className="font-extrabold text-slate-500">Downloaded</p>
+                  <p className="mt-1 font-black text-slate-950">{archivePackageProgress.downloaded}</p>
+                </div>
+                <div>
+                  <p className="font-extrabold text-slate-500">Failed</p>
+                  <p className="mt-1 font-black text-slate-950">{archivePackageProgress.failed}</p>
+                </div>
+              </div>
+            )}
+
+            {archivePackageMessage && (
+              <div className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm font-semibold text-emerald-700">
+                {archivePackageMessage}
+              </div>
+            )}
+
+            {archivePackageError && (
+              <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-700">
+                {archivePackageError}
+              </div>
+            )}
+          </div>
+        )}
+
+        {loadError && (
+          <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+            {loadError}
+          </div>
+        )}
+
+        {isLoading ? (
+          <p className="text-sm text-slate-500">Memuat cargo information dan checker...</p>
+        ) : !canCreate ? (
+          <div className="rounded-lg border border-yellow-300 bg-yellow-50 p-5 text-sm text-yellow-800">
+            Pastikan profile checker aktif sudah tersedia di sistem.
+          </div>
+        ) : (
+          <form className="grid gap-5" onSubmit={handleSubmit}>
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+              <div>
+                <Input
+                  label="Vessel Name"
+                  value={form.vesselName}
+                  onChange={(event) => updateForm('vesselName', event.target.value)}
+                />
+                {errors.vesselName && (
+                  <p className="mt-1 text-sm font-semibold text-red-600">{errors.vesselName}</p>
+                )}
+              </div>
+
+              <div>
+                <Input
+                  label="Cargo Owner"
+                  value={form.cargoOwner}
+                  onChange={(event) => updateForm('cargoOwner', event.target.value)}
+                />
+                {errors.cargoOwner && (
+                  <p className="mt-1 text-sm font-semibold text-red-600">{errors.cargoOwner}</p>
+                )}
+              </div>
+
+              <div>
+                <Input
+                  label="Cargo Type"
+                  value={form.cargoType}
+                  onChange={(event) => updateForm('cargoType', event.target.value)}
+                />
+                {errors.cargoType && (
+                  <p className="mt-1 text-sm font-semibold text-red-600">{errors.cargoType}</p>
+                )}
+              </div>
+
+              <div>
+                <Select
+                  label="Assigned Checker"
+                  value={form.assignedCheckerId}
+                  onChange={(event) => updateForm('assignedCheckerId', event.target.value)}
+                >
+                  <option value="">Pilih checker</option>
+                  {checkers.map((checker) => (
+                    <option key={checker.id} value={checker.id}>
+                      {checker.full_name}
+                    </option>
+                  ))}
+                </Select>
+                {errors.assignedCheckerId && (
+                  <p className="mt-1 text-sm font-semibold text-red-600">{errors.assignedCheckerId}</p>
+                )}
+              </div>
+
+              <div>
+                <Input
+                  label="Start Discharge Date"
+                  type="date"
+                  value={form.startDischargeDate}
+                  onChange={(event) => updateForm('startDischargeDate', event.target.value)}
+                />
+                {errors.startDischargeDate && (
+                  <p className="mt-1 text-sm font-semibold text-red-600">{errors.startDischargeDate}</p>
+                )}
+              </div>
+
+              <div>
+                <Input
+                  label="Total Hatch"
+                  min="1"
+                  type="number"
+                  value={form.totalHatch}
+                  onChange={(event) => updateForm('totalHatch', event.target.value)}
+                />
+                {errors.totalHatch && (
+                  <p className="mt-1 text-sm font-semibold text-red-600">{errors.totalHatch}</p>
+                )}
+              </div>
+
+              <div>
+                <Select
+                  label="Status"
+                  value={form.status}
+                  onChange={(event) => updateForm('status', event.target.value)}
+                >
+                  {statusOptions.map((statusOption) => (
+                    <option key={statusOption.value} value={statusOption.value}>
+                      {statusOption.label}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-slate-200 bg-white p-4">
+              <div className="mb-4">
+                <p className="text-sm font-extrabold text-slate-900">Destinations</p>
+                <p className="text-sm text-slate-500">
+                  Tambahkan satu atau lebih destination untuk vessel ini. Perubahan disimpan saat klik Save.
+                </p>
+              </div>
+
+              <div className="grid gap-3 lg:grid-cols-[1fr_1fr_auto]">
+                <Select
+                  label="Existing Destination"
+                  value={form.destinationOptionId}
+                  onChange={(event) => updateForm('destinationOptionId', event.target.value)}
+                >
+                  <option value="">Pilih destination</option>
+                  {destinationOptions.map((destination) => (
+                    <option key={destination.id} value={destination.id}>
+                      {destination.name}
+                    </option>
+                  ))}
+                </Select>
+                <Input
+                  label="Destination Baru"
+                  value={form.destinationName}
+                  onChange={(event) => updateForm('destinationName', event.target.value)}
+                  placeholder="Contoh: GRP"
+                />
+                <div className="flex items-end">
+                  <Button type="button" variant="secondary" onClick={handleAddDestination}>
+                    Add
+                  </Button>
+                </div>
+              </div>
+
+              {errors.destinationRows && (
+                <p className="mt-2 text-sm font-semibold text-red-600">{errors.destinationRows}</p>
+              )}
+
+              <div className="mt-4 overflow-x-auto rounded-lg border border-slate-200">
+                <table className="min-w-full text-sm">
+                  <thead className="bg-slate-100 text-left text-xs uppercase text-slate-600">
+                    <tr>
+                      <th className="px-4 py-3 font-extrabold">Destination</th>
+                      <th className="px-4 py-3 font-extrabold">Status</th>
+                      <th className="px-4 py-3 font-extrabold text-right">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {form.destinationRows.length === 0 ? (
+                      <tr>
+                        <td colSpan="3" className="px-4 py-4 text-center font-semibold text-slate-500">
+                          Belum ada destination.
+                        </td>
+                      </tr>
+                    ) : (
+                      form.destinationRows.map((destination) => {
+                        const destinationKey = getDestinationKey(destination)
+
+                        return (
+                          <tr key={destinationKey}>
+                            <td className="px-4 py-3 font-bold text-slate-900">
+                              {destination.name || '-'}
+                            </td>
+                            <td className="px-4 py-3">
+                              <Badge variant={destination.isActive ? 'active' : 'pending'}>
+                                {destination.isActive ? 'Active' : 'Inactive'}
+                              </Badge>
+                            </td>
+                            <td className="px-4 py-3 text-right">
+                              {destination.isActive ? (
+                                <Button
+                                  type="button"
+                                  variant="secondary"
+                                  onClick={() => handleToggleDestination(destinationKey, false)}
+                                >
+                                  Deactivate
+                                </Button>
+                              ) : (
+                                <Button
+                                  type="button"
+                                  variant="secondary"
+                                  onClick={() => handleToggleDestination(destinationKey, true)}
+                                >
+                                  Reactivate
+                                </Button>
+                              )}
+                            </td>
+                          </tr>
+                        )
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+              <div className="mb-4 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+                <div>
+                  <p className="text-sm font-extrabold text-slate-900">Final Stowage Plan</p>
+                  <p className="text-sm text-slate-500">Input cargo awal per hatch dalam MT.</p>
+                </div>
+                <p className="text-sm font-bold text-slate-900">
+                  Total Cargo:{' '}
+                  {formatMT(
+                    form.hatchCargoRows.reduce(
+                      (total, row) => total + parseTonnageInputToNumber(row.initialCargo),
+                      0,
+                    ),
+                  )}
+                </p>
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+                {form.hatchCargoRows.map((row) => (
+                  <Input
+                    key={row.hatchNo}
+                    label={`H${row.hatchNo}`}
+                    inputMode="numeric"
+                    placeholder="40491"
+                    value={row.initialCargo}
+                    onChange={(event) => updateHatchCargoValue(row.hatchNo, event.target.value)}
+                  />
+                ))}
+              </div>
+              {errors.hatchCargoRows && (
+                <p className="mt-2 text-sm font-semibold text-red-600">{errors.hatchCargoRows}</p>
+              )}
+            </div>
+
+            <div className="flex flex-wrap justify-end gap-3">
+              {editingVessel && (
+                <Button type="button" variant="secondary" onClick={handleCancelEdit}>
+                  Batalkan
+                </Button>
+              )}
+              <Button type="submit" disabled={isSubmitting}>
+                {isSubmitting
+                  ? 'Menyimpan...'
+                  : editingVessel
+                    ? 'Review Update'
+                    : 'Review Cargo Information'}
+              </Button>
+            </div>
+          </form>
+        )}
+        </>,
+      )}
+
+      <Card title="Daftar Cargo Information" subtitle="Data cargo, FSP, dan checker assignment berasal dari server.">
+        <VesselInformationList
+          emptyMessage={isLoading ? 'Memuat cargo information...' : 'Belum ada cargo information.'}
+          isReadOnly={isReadOnly}
+          onArchive={handleArchiveClick}
+          onEdit={handleEdit}
+          onStatusChange={handleStatusChange}
+          rows={vessels}
+        />
+      </Card>
+
+      {!isReadOnly && (
+      <Modal
+        isOpen={isVesselReviewOpen}
+        onClose={() => {
+          if (!isSubmitting) setIsVesselReviewOpen(false)
+        }}
+        title={editingVessel ? 'Validasi Perubahan Vessel' : 'Validasi Cargo Information Baru'}
+      >
+        <div className="grid gap-5">
+          <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">
+            <p className="font-extrabold">Validasi form lolos</p>
+            <p className="mt-1 font-semibold">
+              Periksa data vessel, FSP, dan assignment sebelum disimpan.
+            </p>
+          </div>
+
+          {vesselReviewRows.length === 0 ? (
+            <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm font-semibold text-slate-600">
+              Tidak ada perubahan pada cargo information.
+            </div>
+          ) : (
+            <div className="overflow-x-auto rounded-lg border border-slate-200">
+              <table className="min-w-full text-sm">
+                <thead className="bg-slate-100 text-left text-xs uppercase text-slate-600">
+                  <tr>
+                    <th className="px-4 py-3 font-extrabold">Field</th>
+                    <th className="px-4 py-3 font-extrabold">Sebelum</th>
+                    <th className="px-4 py-3 font-extrabold">Sesudah</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {vesselReviewRows.map(([field, before, after]) => (
+                    <tr key={field}>
+                      <td className="px-4 py-3 font-bold text-slate-900">{field}</td>
+                      <td className="px-4 py-3 text-slate-600">{before}</td>
+                      <td className="px-4 py-3 font-semibold text-slate-900">{after}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          <div className="flex flex-wrap justify-end gap-3 border-t border-slate-200 pt-4">
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => setIsVesselReviewOpen(false)}
+              disabled={isSubmitting}
+            >
+              Kembali Edit
+            </Button>
+            <Button
+              type="button"
+              variant="success"
+              disabled={isSubmitting || !canConfirmVesselSave}
+              onClick={handleConfirmVesselSave}
+            >
+              {isSubmitting ? 'Menyimpan...' : 'Confirm Save'}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+      )}
+
+      {!isReadOnly && (
+      <Modal
+        isOpen={Boolean(pendingStatusChange)}
+        onClose={() => setPendingStatusChange(null)}
+        title="Validasi Perubahan Status Vessel"
+      >
+        <div className="grid gap-5">
+          <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+            <p className="font-extrabold">
+              {pendingStatusChange?.vessel?.vesselName || '-'}
+            </p>
+            <p className="mt-1 font-semibold">
+              Perubahan status akan langsung mempengaruhi visibilitas vessel di flow operasional.
+            </p>
+          </div>
+
+          <div className="overflow-x-auto rounded-lg border border-slate-200">
+            <table className="min-w-full text-sm">
+              <thead className="bg-slate-100 text-left text-xs uppercase text-slate-600">
+                <tr>
+                  <th className="px-4 py-3 font-extrabold">Field</th>
+                  <th className="px-4 py-3 font-extrabold">Sebelum</th>
+                  <th className="px-4 py-3 font-extrabold">Sesudah</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td className="px-4 py-3 font-bold text-slate-900">Status</td>
+                  <td className="px-4 py-3 text-slate-600">
+                    {getStatusLabel(pendingStatusChange?.vessel?.status)}
+                  </td>
+                  <td className="px-4 py-3 font-semibold text-slate-900">
+                    {getStatusLabel(pendingStatusChange?.nextStatus)}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div className="flex flex-wrap justify-end gap-3 border-t border-slate-200 pt-4">
+            <Button type="button" variant="secondary" onClick={() => setPendingStatusChange(null)}>
+              Cancel
+            </Button>
+            <Button type="button" variant="success" onClick={handleConfirmStatusChange}>
+              Confirm Status
+            </Button>
+          </div>
+        </div>
+      </Modal>
+      )}
+
+      {!isReadOnly && (
+      <Modal
+        isOpen={Boolean(pendingArchiveVessel)}
+        onClose={() => {
+          if (!isArchiving) setPendingArchiveVessel(null)
+        }}
+        title="Archive Vessel"
+      >
+        <div className="grid gap-5">
+          <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+            <p className="font-extrabold">{pendingArchiveVessel?.vesselName || '-'}</p>
+            <p className="mt-1 font-semibold">
+              Vessel ini tidak akan dihapus permanen. Data hanya disembunyikan dari daftar aktif,
+              checker input, dashboard, dan report aktif.
+            </p>
+          </div>
+
+          <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
+            <p className="font-bold text-slate-950">Data historis tetap disimpan:</p>
+            <p className="mt-1">
+              Discharge entries, Final Stowage Plan, destination, checker assignment, dan data report
+              historis tidak dihapus.
+            </p>
+          </div>
+
+          <div className="flex flex-wrap justify-end gap-3 border-t border-slate-200 pt-4">
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => setPendingArchiveVessel(null)}
+              disabled={isArchiving}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              className="border-red-200 text-red-800 hover:bg-red-50"
+              onClick={handleConfirmArchive}
+              disabled={isArchiving}
+            >
+              {isArchiving ? 'Archiving...' : 'Confirm Archive'}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+      )}
+    </div>
+  )
+}
+
+export default VesselDataPage
